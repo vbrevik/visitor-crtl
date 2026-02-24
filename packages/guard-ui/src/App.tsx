@@ -1,17 +1,18 @@
 /**
- * Visitor Portal — External visitor self-service application.
- * Internet-facing, authenticated via ID-porten (Keycloak mock).
+ * Guard Station UI — Reception terminal for guards.
+ * Optimized for speed: large buttons, touch-friendly, minimal navigation.
+ * Connected to convex-restricted backend.
  */
 export function App() {
   return (
     <div>
       <header>
-        <h1>Besøksportalen</h1>
-        <p>Visitor Self-Service Portal</p>
+        <h1>Vaktsentral</h1>
+        <p>Guard Station</p>
       </header>
       <main>
-        <p>Portal scaffold — ready for implementation.</p>
-        {/* TODO: Login (ID-porten), Register Visit, Visit Status, Identity Score */}
+        <p>Guard Station scaffold — ready for implementation.</p>
+        {/* TODO: Today's Visitors, Check-In, Check-Out, Walk-In, Active Visitors, Alerts */}
       </main>
     </div>
   );
