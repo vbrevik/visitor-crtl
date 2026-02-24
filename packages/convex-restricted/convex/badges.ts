@@ -36,7 +36,7 @@ export const issueBadge = action({
       },
     );
     if (!visitorRes.ok) throw new Error(`OnGuard create visitor failed: ${visitorRes.status}`);
-    const visitor = await visitorRes.json();
+    const visitor = (await visitorRes.json()) as { property_value_map?: { ID?: number } };
     const visitorId = visitor.property_value_map?.ID;
 
     // Step 2: Create badge
@@ -58,7 +58,7 @@ export const issueBadge = action({
       },
     );
     if (!badgeRes.ok) throw new Error(`OnGuard create badge failed: ${badgeRes.status}`);
-    const badge = await badgeRes.json();
+    const badge = (await badgeRes.json()) as { property_value_map?: { BADGEKEY?: number; BADGEID?: number } };
     const badgeKey = badge.property_value_map?.BADGEKEY;
 
     // Step 3: Assign access levels

@@ -94,7 +94,9 @@ export default defineSchema({
     correlationId: v.string(),
     payload: v.string(),
     processedAt: v.optional(v.number()),
-  }).index("by_correlation", ["correlationId"]),
+  })
+    .index("by_correlation", ["correlationId"])
+    .index("by_processed", ["processedAt"]),
 
   // Diode outbox — messages to send back to unclassified side
   diodeOutbox: defineTable({
@@ -117,5 +119,5 @@ export default defineSchema({
     description: v.optional(v.string()),
     zones: v.array(v.string()),
     requiredScoreTier: v.string(), // AccessTier
-  }),
+  }).index("by_name", ["name"]),
 });

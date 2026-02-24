@@ -1,0 +1,123 @@
+{
+  "id": "id-porten",
+  "realm": "id-porten",
+  "displayName": "ID-porten (Mock)",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginTheme": "keycloak",
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "roles": {
+    "realm": [
+      {
+        "name": "default-roles-id-porten",
+        "description": "Default roles for id-porten realm",
+        "composite": false
+      }
+    ]
+  },
+  "defaultRole": {
+    "name": "default-roles-id-porten",
+    "description": "Default roles for id-porten realm",
+    "composite": false
+  },
+  "clients": [
+    {
+      "clientId": "vms-portal",
+      "name": "VMS Portal (Visitor Self-Service)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:5173/*",
+        "https://portal.visitor.localhost/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173",
+        "https://portal.visitor.localhost"
+      ],
+      "defaultClientScopes": ["openid", "profile", "email"],
+      "optionalClientScopes": [],
+      "protocolMappers": [
+        {
+          "name": "pid-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "pid",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "pid",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "security-level-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "security_level",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "security_level",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "visitor.norsk",
+      "firstName": "Ola",
+      "lastName": "Nordmann",
+      "email": "ola@example.com",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "test1234", "temporary": false }],
+      "realmRoles": ["default-roles-id-porten"],
+      "attributes": {
+        "pid": ["12345678901"],
+        "security_level": ["4"]
+      }
+    },
+    {
+      "username": "visitor.foreign",
+      "firstName": "John",
+      "lastName": "Smith",
+      "email": "john@example.com",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "test1234", "temporary": false }],
+      "realmRoles": ["default-roles-id-porten"],
+      "attributes": {
+        "pid": [""],
+        "security_level": ["3"]
+      }
+    },
+    {
+      "username": "contractor.admin",
+      "firstName": "Erik",
+      "lastName": "Bygger",
+      "email": "erik@bygg.no",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "test1234", "temporary": false }],
+      "realmRoles": ["default-roles-id-porten"],
+      "attributes": {
+        "pid": ["98765432109"],
+        "security_level": ["4"]
+      }
+    }
+  ]
+}

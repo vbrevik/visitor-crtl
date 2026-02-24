@@ -1,0 +1,114 @@
+# ── Unclass namespace: deny egress to restricted, allow egress to diode and shared-infra ──
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-egress-to-restricted
+  namespace: vms-unclass
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # Allow egress to vms-diode namespace (NATS)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              vms/zone: diode
+      ports:
+        - protocol: TCP
+          port: 4222
+    # Allow egress to shared-infra namespace (PostgreSQL)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: shared-infra
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Allow DNS resolution (kube-system)
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow intra-namespace traffic
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              vms/zone: unclass
+---
+# ── Restricted namespace: deny egress to unclass, allow egress to diode and shared-infra ──
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-egress-to-unclass
+  namespace: vms-restricted
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # Allow egress to vms-diode namespace (NATS)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              vms/zone: diode
+      ports:
+        - protocol: TCP
+          port: 4222
+    # Allow egress to shared-infra namespace (PostgreSQL)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: shared-infra
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Allow DNS resolution (kube-system)
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow intra-namespace traffic
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              vms/zone: restricted
+---
+# ── Diode namespace: allow ingress from unclass and restricted on NATS port only ──
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-nats-ingress
+  namespace: vms-diode
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow ingress from vms-unclass on NATS port
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              vms/zone: unclass
+      ports:
+        - protocol: TCP
+          port: 4222
+    # Allow ingress from vms-restricted on NATS port
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              vms/zone: restricted
+      ports:
+        - protocol: TCP
+          port: 4222
+    # Allow intra-namespace traffic (delay-proxy <-> nats)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              vms/zone: diode

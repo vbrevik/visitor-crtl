@@ -7,7 +7,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 
 const BRREG_STUB_URL =
-  process.env.BRREG_URL ?? "http://mock-registers:8080/brreg";
+  process.env.BRREG_URL ?? "http://mock-registers:8081/brreg";
 
 /** Look up a company by org number. Checks cache first, then calls API. */
 export const lookupCompany = action({
@@ -28,7 +28,7 @@ export const lookupCompany = action({
       throw new Error(`Brønnøysund API error: ${response.status}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as { navn?: string; organisasjonsform?: { kode?: string }; registreringsdatoEnhetsregisteret?: string };
 
     // Cache the result
     await ctx.runMutation(internal.brreg.cacheCompany, {

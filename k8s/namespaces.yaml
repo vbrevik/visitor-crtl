@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vms-unclass
+  labels:
+    app.kubernetes.io/part-of: visitor-mock
+    vms/zone: unclass
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vms-restricted
+  labels:
+    app.kubernetes.io/part-of: visitor-mock
+    vms/zone: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vms-diode
+  labels:
+    app.kubernetes.io/part-of: visitor-mock
+    vms/zone: diode

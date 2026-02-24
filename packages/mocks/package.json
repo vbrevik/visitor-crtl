@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "concurrently \"npm:dev:*\"",
     "dev:onguard": "tsx watch onguard/src/server.ts",
+    "dev:registers": "tsx watch registers/src/server.ts",
+    "dev:notifications": "tsx watch notifications/src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -18,6 +19,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/pg": "^8.11.0",
+    "concurrently": "^9.0.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }

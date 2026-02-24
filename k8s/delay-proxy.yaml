@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: delay-proxy-config
+  namespace: vms-diode
+  labels:
+    app: delay-proxy
+data:
+  DELAY_MS: "5000"
+  JITTER_MS: "2000"
+  DROP_RATE: "0"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: delay-proxy
+  namespace: vms-diode
+  labels:
+    app: delay-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: delay-proxy
+  template:
+    metadata:
+      labels:
+        app: delay-proxy
+    spec:
+      containers:
+        - name: delay-proxy
+          image: vms-delay-proxy:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: delay-proxy-config
+          env:
+            - name: NATS_URL
+              value: nats://nats.vms-diode:4222
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

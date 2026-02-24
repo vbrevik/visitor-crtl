@@ -1,28 +1,37 @@
 /**
  * Identity verification and scoring types.
- * Based on the 100-point identity scoring model.
+ * Based on the 100-point identity scoring model (plan 03-identity-verification.md).
  */
 
 import type { IdentitySource } from "./visitor.js";
 
-/** Points awarded per identity source */
+/** Points awarded per identity source (matches plan §Score Sources) */
 export const IDENTITY_SCORE_MAP: Record<IdentitySource, number> = {
-  id_porten: 40,
   mil_feide: 50,
-  passport: 30,
+  id_porten: 40,
+  passport: 35,
+  in_person: 30,
   fido2: 20,
-  totp: 10,
-  sms_otp: 5,
+  totp: 20,
+  sms_otp: 10,
   email_verified: 5,
-  in_person: 20,
 };
 
-/** Access level thresholds */
+/**
+ * Sources that belong to the same category per the plan's scoring table.
+ * Only one source per group contributes points (FIDO2 preferred over TOTP).
+ */
+const MUTUALLY_EXCLUSIVE_GROUPS: IdentitySource[][] = [
+  ["fido2", "totp"], // "Authenticator app" — single 20-point slot
+];
+
+/** Access level thresholds (matches plan §Threshold Matrix) */
 export const ACCESS_THRESHOLDS = {
-  escorted_only: 40,
-  standard_zones: 60,
-  sensitive_zones: 80,
-  high_security: 100,
+  escorted_day: 40,
+  escorted_recurring: 50,
+  unescorted_restricted: 70,
+  high_security: 90,
+  long_term_contractor: 100,
 } as const;
 
 export type AccessTier = keyof typeof ACCESS_THRESHOLDS;
@@ -45,12 +54,28 @@ export interface VerificationSummary {
 
 export function calculateIdentityScore(sources: IdentitySource[]): number {
   const unique = [...new Set(sources)];
-  return unique.reduce((sum, source) => sum + IDENTITY_SCORE_MAP[source], 0);
+
+  // Remove duplicates within mutually exclusive groups (keep first match = preferred)
+  const excluded = new Set<IdentitySource>();
+  for (const group of MUTUALLY_EXCLUSIVE_GROUPS) {
+    let found = false;
+    for (const member of group) {
+      if (unique.includes(member)) {
+        if (found) excluded.add(member);
+        found = true;
+      }
+    }
+  }
+
+  return unique
+    .filter((s) => !excluded.has(s))
+    .reduce((sum, source) => sum + IDENTITY_SCORE_MAP[source], 0);
 }
 
 export function getMaxAccessTier(score: number): AccessTier {
+  if (score >= ACCESS_THRESHOLDS.long_term_contractor) return "long_term_contractor";
   if (score >= ACCESS_THRESHOLDS.high_security) return "high_security";
-  if (score >= ACCESS_THRESHOLDS.sensitive_zones) return "sensitive_zones";
-  if (score >= ACCESS_THRESHOLDS.standard_zones) return "standard_zones";
-  return "escorted_only";
+  if (score >= ACCESS_THRESHOLDS.unescorted_restricted) return "unescorted_restricted";
+  if (score >= ACCESS_THRESHOLDS.escorted_recurring) return "escorted_recurring";
+  return "escorted_day";
 }

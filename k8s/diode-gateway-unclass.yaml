@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: diode-gateway
+  namespace: vms-unclass
+  labels:
+    app: diode-gateway
+    vms/side: unclass
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: diode-gateway
+      vms/side: unclass
+  template:
+    metadata:
+      labels:
+        app: diode-gateway
+        vms/side: unclass
+    spec:
+      containers:
+        - name: diode-gateway
+          image: vms-diode-gateway:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SIDE
+              value: unclass
+            - name: CONVEX_URL
+              value: http://convex-backend:3210
+            - name: NATS_URL
+              value: nats://nats.vms-diode:4222
+            - name: POLL_INTERVAL_MS
+              value: "2000"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

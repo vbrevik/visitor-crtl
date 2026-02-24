@@ -1,0 +1,175 @@
+# docker-compose.dev.yml
+# Local development stack for the Visitor Mock System.
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml up --build
+#
+# NOTE: Convex backends are NOT included here. Run them on the host with:
+#   cd packages/convex-unclass && npx convex dev   (port 3210)
+#   cd packages/convex-restricted && npx convex dev (port 3211)
+# The React apps connect to Convex via localhost ports.
+
+services:
+  # ── NATS (diode simulator) ───────────────────────────────────────────
+  nats:
+    image: nats:2.10-alpine
+    container_name: vms-nats
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    networks:
+      - vms-net
+
+  # ── Delay Proxy ──────────────────────────────────────────────────────
+  delay-proxy:
+    build:
+      context: .
+      dockerfile: packages/diode-delay-proxy/Dockerfile
+    container_name: vms-delay-proxy
+    depends_on:
+      - nats
+    environment:
+      NATS_URL: nats://nats:4222
+      DELAY_MS: "2000"
+      JITTER_MS: "1000"
+      DROP_RATE: "0"
+    networks:
+      - vms-net
+
+  # ── Keycloak (Mock IdP: ID-porten + Mil Feide) ─────────────────────
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: vms-keycloak
+    command:
+      - start-dev
+      - --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: "8180"
+    ports:
+      - "8180:8180"
+    volumes:
+      - ./keycloak/id-porten-realm.json:/opt/keycloak/data/import/id-porten-realm.json:ro
+      - ./keycloak/mil-feide-realm.json:/opt/keycloak/data/import/mil-feide-realm.json:ro
+    networks:
+      - vms-net
+
+  # ── Mock Servers (all-in-one) ────────────────────────────────────────
+  mocks:
+    build:
+      context: .
+      dockerfile: packages/mocks/Dockerfile
+    container_name: vms-mocks
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+      - "8082:8082"
+    networks:
+      - vms-net
+
+  # ── Diode Gateway (Unclass side) ────────────────────────────────────
+  diode-gateway-unclass:
+    build:
+      context: .
+      dockerfile: packages/diode-gateway/Dockerfile
+    container_name: vms-gw-unclass
+    depends_on:
+      - nats
+      - delay-proxy
+    environment:
+      SIDE: unclass
+      CONVEX_URL: http://host.docker.internal:3210
+      NATS_URL: nats://nats:4222
+      POLL_INTERVAL_MS: "2000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - vms-net
+
+  # ── Diode Gateway (Restricted side) ─────────────────────────────────
+  diode-gateway-restricted:
+    build:
+      context: .
+      dockerfile: packages/diode-gateway/Dockerfile
+    container_name: vms-gw-restricted
+    depends_on:
+      - nats
+      - delay-proxy
+    environment:
+      SIDE: restricted
+      CONVEX_URL: http://host.docker.internal:3211
+      NATS_URL: nats://nats:4222
+      POLL_INTERVAL_MS: "2000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - vms-net
+
+  # ── Portal (React) ──────────────────────────────────────────────────
+  portal:
+    build:
+      context: .
+      dockerfile: packages/portal/Dockerfile
+      args:
+        VITE_CONVEX_URL: http://localhost:3210
+        VITE_KEYCLOAK_URL: http://localhost:8180
+    container_name: vms-portal
+    depends_on:
+      - keycloak
+    ports:
+      - "5173:80"
+    networks:
+      - vms-net
+
+  # ── Sponsor (React) ─────────────────────────────────────────────────
+  sponsor:
+    build:
+      context: .
+      dockerfile: packages/sponsor/Dockerfile
+      args:
+        VITE_CONVEX_URL: http://localhost:3210
+        VITE_KEYCLOAK_URL: http://localhost:8180
+    container_name: vms-sponsor
+    depends_on:
+      - keycloak
+    ports:
+      - "5176:80"
+    networks:
+      - vms-net
+
+  # ── Guard UI (React) ────────────────────────────────────────────────
+  guard-ui:
+    build:
+      context: .
+      dockerfile: packages/guard-ui/Dockerfile
+      args:
+        VITE_CONVEX_URL: http://localhost:3211
+        VITE_KEYCLOAK_URL: http://localhost:8180
+    container_name: vms-guard-ui
+    depends_on:
+      - keycloak
+    ports:
+      - "5174:80"
+    networks:
+      - vms-net
+
+  # ── Security UI (React) ─────────────────────────────────────────────
+  security-ui:
+    build:
+      context: .
+      dockerfile: packages/security-ui/Dockerfile
+      args:
+        VITE_CONVEX_URL: http://localhost:3211
+        VITE_KEYCLOAK_URL: http://localhost:8180
+    container_name: vms-security-ui
+    depends_on:
+      - keycloak
+    ports:
+      - "5175:80"
+    networks:
+      - vms-net
+
+networks:
+  vms-net:
+    driver: bridge

@@ -6,16 +6,22 @@ import { v } from "convex/values";
 
 /** List visit requests for the current user (visitor or sponsor). */
 export const listMyVisits = query({
-  args: { status: v.optional(v.string()) },
+  args: { status: v.optional(v.string()), userId: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    // TODO: filter by authenticated user
+    let results;
     if (args.status) {
-      return ctx.db
+      results = await ctx.db
         .query("visitRequests")
         .withIndex("by_status", (q) => q.eq("status", args.status!))
         .collect();
+    } else {
+      results = await ctx.db.query("visitRequests").collect();
     }
-    return ctx.db.query("visitRequests").collect();
+    // Filter by authenticated user if provided
+    if (args.userId) {
+      return results.filter((r: any) => r.createdBy === args.userId);
+    }
+    return results;
   },
 });
 
@@ -25,7 +31,7 @@ export const listBySiteAndDate = query({
   handler: async (ctx, args) => {
     return ctx.db
       .query("visitRequests")
-      .withIndex("by_site_date", (q) =>
+      .withIndex("by_site_date", (q: any) =>
         q.eq("siteId", args.siteId).eq("dateFrom", args.date),
       )
       .collect();
@@ -54,25 +60,28 @@ export const submitVisitRequest = mutation({
     sponsorName: v.optional(v.string()),
     identityScore: v.number(),
     identitySources: v.array(v.string()),
+    createdBy: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const correlationId = crypto.randomUUID();
+    const { createdBy, ...visitData } = args;
 
     // Create the visit request
     const requestId = await ctx.db.insert("visitRequests", {
-      ...args,
+      ...visitData,
       status: "submitted",
       diodeMessageId: correlationId,
-      createdBy: "TODO_AUTH_USER", // TODO: get from auth context
+      createdBy: createdBy ?? "anonymous",
     });
 
     // Queue diode message to send to restricted side
+    // Use visitData (not args) to exclude createdBy — data minimization across the air gap
     await ctx.db.insert("diodeOutbox", {
       messageType: "VISITOR_REQUEST",
       correlationId,
       payload: JSON.stringify({
         requestId,
-        ...args,
+        ...visitData,
       }),
       status: "pending",
       attempts: 0,
@@ -82,9 +91,40 @@ export const submitVisitRequest = mutation({
   },
 });
 
+/** Sponsor approves (endorses) a visit request. Records the action and updates status. */
+export const approveVisit = mutation({
+  args: {
+    visitRequestId: v.id("visitRequests"),
+    sponsorId: v.string(),
+    escortEmployeeId: v.optional(v.string()),
+    notes: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const visit = await ctx.db.get(args.visitRequestId);
+    if (!visit) throw new Error("Visit not found");
+    if (visit.status !== "submitted") {
+      throw new Error(`Cannot approve visit in status ${visit.status}`);
+    }
+
+    await ctx.db.patch(args.visitRequestId, { status: "approved" });
+
+    // Record the sponsor action for audit trail
+    await ctx.db.insert("sponsorActions", {
+      visitRequestId: args.visitRequestId,
+      action: "approved",
+      sponsorId: args.sponsorId,
+      escortEmployeeId: args.escortEmployeeId,
+      notes: args.notes,
+    });
+  },
+});
+
 /** Cancel a visit request. */
 export const cancelVisit = mutation({
-  args: { visitRequestId: v.id("visitRequests") },
+  args: {
+    visitRequestId: v.id("visitRequests"),
+    reason: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const visit = await ctx.db.get(args.visitRequestId);
     if (!visit) throw new Error("Visit not found");
@@ -98,7 +138,10 @@ export const cancelVisit = mutation({
       await ctx.db.insert("diodeOutbox", {
         messageType: "VISITOR_CANCEL",
         correlationId: visit.diodeMessageId,
-        payload: JSON.stringify({ requestId: args.visitRequestId }),
+        payload: JSON.stringify({
+          requestId: args.visitRequestId,
+          reason: args.reason ?? "Cancelled by visitor",
+        }),
         status: "pending",
         attempts: 0,
       });

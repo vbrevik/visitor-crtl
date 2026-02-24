@@ -34,7 +34,8 @@ export default defineSchema({
   })
     .index("by_status", ["status"])
     .index("by_sponsor", ["sponsorEmployeeId"])
-    .index("by_site_date", ["siteId", "dateFrom"]),
+    .index("by_site_date", ["siteId", "dateFrom"])
+    .index("by_diode_message", ["diodeMessageId"]),
 
   // Sponsor actions (approvals, escort assignments)
   sponsorActions: defineTable({
@@ -78,5 +79,7 @@ export default defineSchema({
     correlationId: v.string(),
     payload: v.string(),
     processedAt: v.optional(v.number()),
-  }).index("by_correlation", ["correlationId"]),
+  })
+    .index("by_correlation", ["correlationId"])
+    .index("by_processed", ["processedAt"]),
 });

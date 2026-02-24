@@ -15,6 +15,7 @@
     "dev:convex-restricted": "npm run dev -w packages/convex-restricted",
     "dev:mocks": "npm run dev -w packages/mocks",
     "dev:gateway": "npm run dev -w packages/diode-gateway",
+    "dev:management-ui": "npm run dev -w packages/management-ui",
     "build": "npm run build --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"

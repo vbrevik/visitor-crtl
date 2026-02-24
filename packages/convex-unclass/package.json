@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@vms/shared": "*",
     "convex": "^1.17.0"
   },
   "devDependencies": {

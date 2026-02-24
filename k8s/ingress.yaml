@@ -1,0 +1,310 @@
+# ── Portal Ingress (unclass zone) ──────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: portal-ingress
+  namespace: vms-unclass
+  labels:
+    app: portal
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+    - host: portal.visitor.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: portal
+                port:
+                  number: 80
+---
+# ── Portal Service ─────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: portal
+  namespace: vms-unclass
+  labels:
+    app: portal
+spec:
+  type: ClusterIP
+  selector:
+    app: portal
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+# ── Portal Deployment ──────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portal
+  namespace: vms-unclass
+  labels:
+    app: portal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: portal
+  template:
+    metadata:
+      labels:
+        app: portal
+    spec:
+      containers:
+        - name: portal
+          image: vms-portal:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+---
+# ── Keycloak Ingress (unclass zone) ──────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: keycloak-ingress
+  namespace: vms-unclass
+  labels:
+    app: keycloak
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+    - host: auth.visitor.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak
+                port:
+                  number: 8180
+---
+# ── Sponsor Ingress (unclass zone) ────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sponsor-ingress
+  namespace: vms-unclass
+  labels:
+    app: sponsor
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+    - host: sponsor.visitor.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sponsor
+                port:
+                  number: 80
+---
+# ── Sponsor Service ───────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: sponsor
+  namespace: vms-unclass
+  labels:
+    app: sponsor
+spec:
+  type: ClusterIP
+  selector:
+    app: sponsor
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+# ── Sponsor Deployment ────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sponsor
+  namespace: vms-unclass
+  labels:
+    app: sponsor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sponsor
+  template:
+    metadata:
+      labels:
+        app: sponsor
+    spec:
+      containers:
+        - name: sponsor
+          image: vms-sponsor:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+---
+# ── Guard UI Ingress (restricted zone) ────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: guard-ui-ingress
+  namespace: vms-restricted
+  labels:
+    app: guard-ui
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+    - host: guard.visitor.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: guard-ui
+                port:
+                  number: 80
+---
+# ── Guard UI Service ──────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: guard-ui
+  namespace: vms-restricted
+  labels:
+    app: guard-ui
+spec:
+  type: ClusterIP
+  selector:
+    app: guard-ui
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+# ── Guard UI Deployment ───────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guard-ui
+  namespace: vms-restricted
+  labels:
+    app: guard-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: guard-ui
+  template:
+    metadata:
+      labels:
+        app: guard-ui
+    spec:
+      containers:
+        - name: guard-ui
+          image: vms-guard-ui:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+---
+# ── Security UI Ingress (restricted zone) ─────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: security-ui-ingress
+  namespace: vms-restricted
+  labels:
+    app: security-ui
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+    - host: security.visitor.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: security-ui
+                port:
+                  number: 80
+---
+# ── Security UI Service ───────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: security-ui
+  namespace: vms-restricted
+  labels:
+    app: security-ui
+spec:
+  type: ClusterIP
+  selector:
+    app: security-ui
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+# ── Security UI Deployment ────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: security-ui
+  namespace: vms-restricted
+  labels:
+    app: security-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: security-ui
+  template:
+    metadata:
+      labels:
+        app: security-ui
+    spec:
+      containers:
+        - name: security-ui
+          image: vms-security-ui:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi

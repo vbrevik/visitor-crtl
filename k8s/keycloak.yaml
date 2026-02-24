@@ -1,0 +1,73 @@
+# Keycloak — Mock Identity Provider (ID-porten + Mil Feide)
+# Deployed to vms-unclass namespace (internet-facing zone in production)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realms
+  namespace: vms-unclass
+data:
+  id-porten-realm.json: |
+    # Mounted from keycloak/id-porten-realm.json at deploy time
+    # In K8s, use: kubectl create configmap keycloak-realms --from-file=keycloak/ -n vms-unclass
+  mil-feide-realm.json: |
+    # Mounted from keycloak/mil-feide-realm.json at deploy time
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: vms-unclass
+  labels:
+    app: keycloak
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:24.0
+          args:
+            - start-dev
+            - --import-realm
+          env:
+            - name: KEYCLOAK_ADMIN
+              value: "admin"
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              value: "admin"
+            - name: KC_HTTP_PORT
+              value: "8180"
+          ports:
+            - containerPort: 8180
+          volumeMounts:
+            - name: realm-config
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+      volumes:
+        - name: realm-config
+          configMap:
+            name: keycloak-realms
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: vms-unclass
+spec:
+  selector:
+    app: keycloak
+  ports:
+    - port: 8180
+      targetPort: 8180

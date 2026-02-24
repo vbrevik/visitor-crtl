@@ -1,0 +1,314 @@
+{
+  "id": "mil-feide",
+  "realm": "mil-feide",
+  "displayName": "Mil Feide (Mock)",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "roles": {
+    "realm": [
+      { "name": "sponsor", "description": "Can sponsor visitors for site access", "composite": false },
+      { "name": "reception_guard", "description": "Reception desk guard role", "composite": false },
+      { "name": "security_officer", "description": "Security officer with elevated privileges", "composite": false },
+      { "name": "escort", "description": "Can escort visitors on site", "composite": false },
+      { "name": "unit_manager", "description": "Unit manager with approval authority", "composite": false },
+      { "name": "site_admin", "description": "Site administrator with full access", "composite": false },
+      { "name": "auditor", "description": "Read-only audit access", "composite": false },
+      { "name": "default-roles-mil-feide", "description": "Default roles for mil-feide realm", "composite": false }
+    ]
+  },
+  "defaultRole": {
+    "name": "default-roles-mil-feide",
+    "description": "Default roles for mil-feide realm",
+    "composite": false
+  },
+  "clients": [
+    {
+      "clientId": "vms-sponsor",
+      "name": "VMS Sponsor Portal",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:5176/*", "https://sponsor.visitor.localhost/*"],
+      "webOrigins": ["http://localhost:5176", "https://sponsor.visitor.localhost"],
+      "defaultClientScopes": ["openid", "profile", "email"],
+      "protocolMappers": [
+        {
+          "name": "realm-roles-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "employee-id-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "employee_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "employee_id",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "unit-id-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "unit_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "unit_id",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "site-id-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "site_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "site_id",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "vms-guard",
+      "name": "VMS Guard Station",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:5174/*", "https://guard.visitor.localhost/*"],
+      "webOrigins": ["http://localhost:5174", "https://guard.visitor.localhost"],
+      "defaultClientScopes": ["openid", "profile", "email"],
+      "protocolMappers": [
+        {
+          "name": "realm-roles-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "employee-id-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "employee_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "employee_id",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "unit-id-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "unit_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "unit_id",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "site-id-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "site_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "site_id",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "vms-security",
+      "name": "VMS Security Dashboard",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:5175/*", "https://security.visitor.localhost/*"],
+      "webOrigins": ["http://localhost:5175", "https://security.visitor.localhost"],
+      "defaultClientScopes": ["openid", "profile", "email"],
+      "protocolMappers": [
+        {
+          "name": "realm-roles-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "employee-id-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "employee_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "employee_id",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "unit-id-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "unit_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "unit_id",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "site-id-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "site_id",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "site_id",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "sponsor.hansen",
+      "firstName": "Kari",
+      "lastName": "Hansen",
+      "email": "kari.hansen@mil.no",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "test1234", "temporary": false }],
+      "realmRoles": ["sponsor", "default-roles-mil-feide"],
+      "attributes": { "employee_id": ["E001"], "unit_id": ["UNIT-OPS"], "site_id": ["SITE-A"] }
+    },
+    {
+      "username": "guard.olsen",
+      "firstName": "Lars",
+      "lastName": "Olsen",
+      "email": "lars.olsen@mil.no",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "test1234", "temporary": false }],
+      "realmRoles": ["reception_guard", "default-roles-mil-feide"],
+      "attributes": { "employee_id": ["E002"], "unit_id": ["UNIT-SEC"], "site_id": ["SITE-A"] }
+    },
+    {
+      "username": "security.berg",
+      "firstName": "Anne",
+      "lastName": "Berg",
+      "email": "anne.berg@mil.no",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "test1234", "temporary": false }],
+      "realmRoles": ["security_officer", "default-roles-mil-feide"],
+      "attributes": { "employee_id": ["E003"], "unit_id": ["UNIT-SEC"], "site_id": ["SITE-A"] }
+    },
+    {
+      "username": "escort.nilsen",
+      "firstName": "Per",
+      "lastName": "Nilsen",
+      "email": "per.nilsen@mil.no",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "test1234", "temporary": false }],
+      "realmRoles": ["escort", "default-roles-mil-feide"],
+      "attributes": { "employee_id": ["E004"], "unit_id": ["UNIT-OPS"], "site_id": ["SITE-A"] }
+    },
+    {
+      "username": "manager.dahl",
+      "firstName": "Ingrid",
+      "lastName": "Dahl",
+      "email": "ingrid.dahl@mil.no",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "test1234", "temporary": false }],
+      "realmRoles": ["unit_manager", "default-roles-mil-feide"],
+      "attributes": { "employee_id": ["E005"], "unit_id": ["UNIT-OPS"], "site_id": ["SITE-A"] }
+    },
+    {
+      "username": "admin.root",
+      "firstName": "Sysadmin",
+      "lastName": "Root",
+      "email": "admin@mil.no",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "test1234", "temporary": false }],
+      "realmRoles": ["site_admin", "default-roles-mil-feide"],
+      "attributes": { "employee_id": ["E006"], "unit_id": ["UNIT-IT"], "site_id": ["SITE-A"] }
+    }
+  ]
+}
