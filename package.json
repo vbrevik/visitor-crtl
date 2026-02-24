@@ -1,0 +1,25 @@
+{
+  "name": "visitor-mock",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Visitor Management System — mock environment and services",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:portal": "npm run dev -w packages/portal",
+    "dev:guard-ui": "npm run dev -w packages/guard-ui",
+    "dev:security-ui": "npm run dev -w packages/security-ui",
+    "dev:sponsor": "npm run dev -w packages/sponsor",
+    "dev:convex-unclass": "npm run dev -w packages/convex-unclass",
+    "dev:convex-restricted": "npm run dev -w packages/convex-restricted",
+    "dev:mocks": "npm run dev -w packages/mocks",
+    "dev:gateway": "npm run dev -w packages/diode-gateway",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
