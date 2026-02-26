@@ -55,6 +55,7 @@ export const receive = mutation({
         sponsorEmployeeId: data.sponsorEmployeeId,
         sponsorName: data.sponsorName,
         identityScore: data.identityScore ?? 0,
+        baseScore: data.identityScore ?? 0,
         identitySources: data.identitySources ?? [],
         approvalTier: "sponsor",
         diodeCorrelationId: args.correlationId,
