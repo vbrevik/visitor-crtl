@@ -126,6 +126,38 @@ describe("computeVerifiedScore — register modifiers", () => {
   });
 });
 
+describe("computeVerifiedScore — FREG block cases", () => {
+  it("FREG deceased blocks the visit and returns blocked=true", () => {
+    const result = computeVerifiedScore(80, [
+      { register: "freg", result: "deceased", modifier: 0, block: true },
+    ]);
+    expect(result.blocked).toBe(true);
+    expect(result.blockReason).toContain("FREG");
+    // score is preserved (not modified) when blocked
+    expect(result.verifiedScore).toBe(80);
+  });
+
+  it("FREG emigrated blocks the visit and returns blocked=true", () => {
+    const result = computeVerifiedScore(40, [
+      { register: "freg", result: "emigrated", modifier: 0, block: true },
+    ]);
+    expect(result.blocked).toBe(true);
+    expect(result.blockReason).toContain("FREG");
+    expect(result.verifiedScore).toBe(40);
+  });
+
+  it("block stops processing further register results", () => {
+    // Even if NKR comes after a blocked FREG, the block short-circuits
+    const result = computeVerifiedScore(80, [
+      { register: "freg", result: "deceased", modifier: 0, block: true },
+      { register: "nkr", result: "active_clearance", modifier: 20 },
+    ]);
+    expect(result.blocked).toBe(true);
+    // NKR modifier should NOT be applied
+    expect(result.verifiedScore).toBe(80);
+  });
+});
+
 describe("resolveAccessTier", () => {
   it("Anna (105, FREG positive, BRREG active) → long_term_contractor", () => {
     const tier = resolveAccessTier(105, [
