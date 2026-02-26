@@ -1,7 +1,7 @@
 /**
  * Visit management — state machine, queries, and mutations for the RESTRICTED side.
  */
-import { query, mutation, internalMutation } from "./_generated/server";
+import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 
 /** Valid state transitions for the visit state machine. */
@@ -179,6 +179,54 @@ export const receiveFromDiode = internalMutation({
       identitySources: data.identitySources ?? [],
       approvalTier: "sponsor", // TODO: determine from access level
       diodeCorrelationId: args.correlationId,
+    });
+  },
+});
+
+/** Get a single visit by ID. Internal only — used by verification pipeline. */
+export const getById = internalQuery({
+  args: { id: v.id("visits") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id);
+  },
+});
+
+/** Update scoring results after register verification. Internal only. */
+export const updateScoringResults = internalMutation({
+  args: {
+    id: v.id("visits"),
+    baseScore: v.number(),
+    verifiedScore: v.number(),
+    accessTier: v.union(
+      v.literal("escorted_day"),
+      v.literal("escorted_recurring"),
+      v.literal("unescorted"),
+      v.literal("high_security"),
+      v.literal("long_term_contractor"),
+      v.null()
+    ),
+    flagReasons: v.array(v.string()),
+    registerResults: v.array(v.object({
+      register: v.union(
+        v.literal("freg"),
+        v.literal("nkr"),
+        v.literal("brreg"),
+        v.literal("sap_hr")
+      ),
+      result: v.string(),
+      modifier: v.number(),
+      block: v.optional(v.boolean()),
+    })),
+    scoreDivergent: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      baseScore: args.baseScore,
+      verifiedScore: args.verifiedScore,
+      accessTier: args.accessTier,
+      flagReasons: args.flagReasons,
+      registerResults: args.registerResults,
+      scoreDivergent: args.scoreDivergent,
     });
   },
 });
