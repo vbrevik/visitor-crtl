@@ -26,6 +26,35 @@ export default defineSchema({
     escortName: v.optional(v.string()),
     identityScore: v.number(),
     identitySources: v.array(v.string()),
+    // Stage 1: portal-calculated base score (untrusted — for divergence comparison)
+    baseScore: v.optional(v.number()),
+    // Stage 2: restricted-recalculated verified score after register modifiers
+    verifiedScore: v.optional(v.number()),
+    // Stage 3: resolved access tier (null = below minimum threshold)
+    accessTier: v.optional(v.union(
+      v.literal("escorted_day"),
+      v.literal("escorted_recurring"),
+      v.literal("unescorted"),
+      v.literal("high_security"),
+      v.literal("long_term_contractor"),
+      v.null()
+    )),
+    // Auto-flag reasons for security officer review (empty array = no flags)
+    flagReasons: v.optional(v.array(v.string())),
+    // Structured register verification results with modifiers
+    registerResults: v.optional(v.array(v.object({
+      register: v.union(
+        v.literal("freg"),
+        v.literal("nkr"),
+        v.literal("brreg"),
+        v.literal("sap_hr")
+      ),
+      result: v.string(),
+      modifier: v.number(),
+      block: v.optional(v.boolean()),
+    }))),
+    // True if verifiedScore differs from portal baseScore by > 10 pts
+    scoreDivergent: v.optional(v.boolean()),
     approvalTier: v.string(), // ApprovalTier
     badgeId: v.optional(v.string()),
     accessLevelIds: v.optional(v.array(v.string())),
