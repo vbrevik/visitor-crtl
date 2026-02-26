@@ -78,7 +78,7 @@ export const verifyVisit = action({
 
     // Stage 2: recalculate base score independently (never trust the portal's number)
     const { score: recalcBase } = computeBaseScore(identitySources);
-    const { verifiedScore, blocked } = computeVerifiedScore(recalcBase, registerResults);
+    const { verifiedScore, blocked, blockReason } = computeVerifiedScore(recalcBase, registerResults);
 
     // Stage 3: resolve tier
     const accessTier = blocked ? null : resolveAccessTier(verifiedScore, registerResults);
@@ -89,11 +89,17 @@ export const verifyVisit = action({
     // Generate flag reasons
     const flagReasons = generateFlagReasons(verifiedScore, registerResults, diversity);
 
+    if (blocked && blockReason) {
+      flagReasons.push(`BLOCKED: ${blockReason}`);
+    }
+
     // Divergence detection: > 10 pts difference between portal and restricted
-    const scoreDivergent = Math.abs(verifiedScore - portalBaseScore) > 10;
+    // Compare source-only scores — register modifiers are expected, so compare recalcBase (restricted)
+    // vs portalBaseScore (portal). A discrepancy here indicates the source list was tampered with.
+    const scoreDivergent = Math.abs(recalcBase - portalBaseScore) > 10;
     if (scoreDivergent) {
       flagReasons.push(
-        `Score divergence: portal=${portalBaseScore}, restricted=${verifiedScore} (diff=${verifiedScore - portalBaseScore} pts)`
+        `Score divergence: portal=${portalBaseScore}, restricted=${recalcBase} (diff=${recalcBase - portalBaseScore} pts)`
       );
     }
     // Update visit record with scoring results

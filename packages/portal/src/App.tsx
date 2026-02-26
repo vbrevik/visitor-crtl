@@ -1042,7 +1042,7 @@ function StepIdentity({
   // SVG ring parameters
   const radius = 50;
   const circumference = 2 * Math.PI * radius;
-  const maxScore = 120; // theoretical max
+  const maxScore = 190; // theoretical max: 50+40+35+30+20+10+5
   const pct = Math.min(identityScore / maxScore, 1);
   const dashOffset = circumference * (1 - pct);
   const scoreColor = getScoreColor(identityScore);

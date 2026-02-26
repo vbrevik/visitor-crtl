@@ -90,6 +90,7 @@ export interface ScoringTier {
   minScore: number;
   hardGates: {
     fregMustBePositive?: boolean;
+    fregMustNotBeNegative?: boolean;  // FREG absent or neutral is OK, but negative result blocks
     nkrNoFlags?: boolean;
     nkrActiveClearanceRequired?: boolean;
     brregMustBeValid?: boolean;
@@ -104,7 +105,7 @@ export const ACCESS_TIERS: ScoringTier[] = [
     id: "escorted_day",
     label: "Escorted day visit",
     minScore: 40,
-    hardGates: {},
+    hardGates: { fregMustNotBeNegative: true },
   },
   {
     id: "escorted_recurring",
@@ -130,6 +131,7 @@ export const ACCESS_TIERS: ScoringTier[] = [
     minScore: 100,
     hardGates: {
       fregMustBePositive: true,
+      nkrNoFlags: true,
       brregMustBeValid: true,
     },
   },
@@ -241,6 +243,12 @@ function fregIsPositive(results: RegisterResult[]): boolean {
   return freg.result === "found_alive";
 }
 
+function fregIsNotNegative(results: RegisterResult[]): boolean {
+  const freg = results.find((r) => r.register === "freg");
+  if (!freg) return true; // FREG absent = neutral = acceptable
+  return freg.modifier >= 0; // found_alive(+15) passes; not_found(-20) fails
+}
+
 function nkrHasNoFlags(results: RegisterResult[]): boolean {
   const nkr = results.find((r) => r.register === "nkr");
   if (!nkr) return true;
@@ -269,6 +277,7 @@ export function resolveAccessTier(
 
     const g = tier.hardGates;
     if (g.fregMustBePositive && !fregIsPositive(registerResults)) continue;
+    if (g.fregMustNotBeNegative && !fregIsNotNegative(registerResults)) continue;
     if (g.nkrNoFlags && !nkrHasNoFlags(registerResults)) continue;
     if (g.nkrActiveClearanceRequired && !nkrHasActiveClearance(registerResults)) continue;
     if (g.brregMustBeValid && !brregIsValid(registerResults)) continue;
