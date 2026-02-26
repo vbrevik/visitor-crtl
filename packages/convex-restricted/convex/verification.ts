@@ -55,9 +55,16 @@ export const verifyVisit = action({
     }
     if (nkrResult.status === "fulfilled") {
       registerResults.push(nkrResult.value);
+    } else {
+      // NKR unavailable — neutral (no modifier applied)
+      registerResults.push({ register: "nkr", result: "no_clearance", modifier: 0 });
     }
+
     if (sapResult.status === "fulfilled") {
       registerResults.push(sapResult.value);
+    } else {
+      // SAP HR unavailable — neutral (no modifier applied)
+      registerResults.push({ register: "sap_hr", result: "not_employee", modifier: 0 });
     }
 
     // Get visit data for recalculation
