@@ -9,6 +9,14 @@ import { useState, useCallback, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useAction } from "./mock-convex";
 import { api } from "../../convex-unclass/convex/_generated/api";
 import { useAuth } from "./auth/AuthProvider";
+import {
+  IDENTITY_SOURCES,
+  ACCESS_TIERS,
+  computeBaseScore,
+  checkCategoryDiversity,
+  type IdentityScoreSource,
+  type TierId,
+} from "@vms/shared";
 import "./App.css";
 
 // The generated dataModel may not exist yet (stub), so we define a local alias.
@@ -218,125 +226,20 @@ function t(key: string, lang: Lang): string {
 // ────────────────────────────────────────────────────────────────────
 // Identity Score System
 // ────────────────────────────────────────────────────────────────────
-interface IdentitySource {
-  id: string;
-  label: Record<Lang, string>;
-  description: Record<Lang, string>;
-  icon: string;
-  points: number;
-  slot?: string; // sources in the same slot only count once
+
+// Helper: get localized label for a ScoringSource
+function srcLabel(src: IdentityScoreSource, lang: Lang): string {
+  return lang === "no" ? src.labelNo : src.label;
 }
 
-const IDENTITY_SOURCES: IdentitySource[] = [
-  {
-    id: "mil_feide",
-    label: { no: "Mil Feide", en: "Mil Feide" },
-    description: {
-      no: "Forsvarets identitetsfederasjon",
-      en: "Defense sector identity federation",
-    },
-    icon: "\u{1F3DB}",
-    points: 50,
-  },
-  {
-    id: "id_porten",
-    label: { no: "ID-porten", en: "ID-porten" },
-    description: {
-      no: "BankID, MinID, Buypass eller Commfides",
-      en: "BankID, MinID, Buypass or Commfides",
-    },
-    icon: "\u{1F3E6}",
-    points: 40,
-  },
-  {
-    id: "passport",
-    label: { no: "Pass", en: "Passport" },
-    description: {
-      no: "Fotoopplasting eller NFC-skanning",
-      en: "Photo upload or NFC scan",
-    },
-    icon: "\u{1F4D8}",
-    points: 35,
-  },
-  {
-    id: "in_person",
-    label: {
-      no: "Personlig verifisering",
-      en: "In-person verification",
-    },
-    description: {
-      no: "Vakt bekrefter identitet ved ankomst",
-      en: "Guard confirms identity upon arrival",
-    },
-    icon: "\u{1F464}",
-    points: 30,
-  },
-  {
-    id: "fido2",
-    label: { no: "FIDO2 / Sikkerhetsnokkel", en: "FIDO2 / Security key" },
-    description: {
-      no: "Fysisk sikkerhetsnokkel eller biometri",
-      en: "Physical security key or biometrics",
-    },
-    icon: "\u{1F511}",
-    points: 20,
-    slot: "authenticator",
-  },
-  {
-    id: "totp",
-    label: { no: "TOTP Autentisering", en: "TOTP Authenticator" },
-    description: {
-      no: "Tidsbasert engangspassord-app",
-      en: "Time-based one-time password app",
-    },
-    icon: "\u{1F4F1}",
-    points: 20,
-    slot: "authenticator",
-  },
-  {
-    id: "sms_otp",
-    label: { no: "SMS-bekreftelse", en: "SMS verification" },
-    description: {
-      no: "Engangskode sendt til telefon",
-      en: "One-time code sent to phone",
-    },
-    icon: "\u{1F4AC}",
-    points: 10,
-  },
-  {
-    id: "email_verified",
-    label: { no: "E-postbekreftelse", en: "Email verification" },
-    description: {
-      no: "Bekreftelseslenke sendt til e-post",
-      en: "Confirmation link sent to email",
-    },
-    icon: "\u{2709}",
-    points: 5,
-  },
-];
-
-const THRESHOLDS = [
-  { key: "escortedDay", score: 40 },
-  { key: "escortedRecurring", score: 50 },
-  { key: "unescorted", score: 70 },
-  { key: "highSecurity", score: 90 },
-  { key: "longTerm", score: 100 },
-] as const;
-
-function computeScore(selectedIds: string[]): number {
-  const slotBest: Record<string, number> = {};
-  let total = 0;
-  for (const src of IDENTITY_SOURCES) {
-    if (!selectedIds.includes(src.id)) continue;
-    if (src.slot) {
-      slotBest[src.slot] = Math.max(slotBest[src.slot] ?? 0, src.points);
-    } else {
-      total += src.points;
-    }
-  }
-  for (const pts of Object.values(slotBest)) total += pts;
-  return total;
-}
+// Helper: map ACCESS_TIERS id to existing T() translation key
+const TIER_T_KEY: Record<TierId, string> = {
+  escorted_day: "escortedDay",
+  escorted_recurring: "escortedRecurring",
+  unescorted: "unescorted",
+  high_security: "highSecurity",
+  long_term_contractor: "longTerm",
+};
 
 function getScoreColor(score: number): string {
   if (score >= 90) return "#2e7d32";
@@ -457,7 +360,7 @@ export function App() {
   );
 
   const identityScore = useMemo(
-    () => computeScore(form.identitySources),
+    () => computeBaseScore(form.identitySources).score,
     [form.identitySources]
   );
 
@@ -1134,10 +1037,13 @@ function StepIdentity({
   const scoreColor = getScoreColor(identityScore);
 
   // Determine reached threshold
-  const reachedThreshold = THRESHOLDS.filter(
-    (th) => identityScore >= th.score
+  const reachedThreshold = ACCESS_TIERS.filter(
+    (th) => identityScore >= th.minScore
   );
-  const nextThreshold = THRESHOLDS.find((th) => identityScore < th.score);
+  const nextThreshold = ACCESS_TIERS.find((th) => identityScore < th.minScore);
+
+  // Category diversity
+  const diversity = checkCategoryDiversity(form.identitySources);
 
   // Effective points display (accounting for same-slot)
   const hasAuthenticator = form.identitySources.some((s) =>
@@ -1179,8 +1085,8 @@ function StepIdentity({
             }}
           >
             {lang === "no"
-              ? `${nextThreshold.score - identityScore} poeng til "${t(nextThreshold.key, lang)}"`
-              : `${nextThreshold.score - identityScore} points to "${t(nextThreshold.key, lang)}"`}
+              ? `${nextThreshold.minScore - identityScore} poeng til "${t(TIER_T_KEY[nextThreshold.id], lang)}"`
+              : `${nextThreshold.minScore - identityScore} points to "${t(TIER_T_KEY[nextThreshold.id], lang)}"`}
           </p>
         )}
       </div>
@@ -1198,16 +1104,16 @@ function StepIdentity({
           />
         </div>
         <div className="threshold-markers">
-          {THRESHOLDS.map((th) => (
+          {ACCESS_TIERS.map((th) => (
             <div
-              key={th.key}
+              key={th.id}
               className={`threshold-marker ${
-                identityScore >= th.score ? "reached" : ""
+                identityScore >= th.minScore ? "reached" : ""
               }`}
             >
               <span className="marker-dot" />
-              <span>{th.score}</span>
-              <span>{t(th.key, lang)}</span>
+              <span>{th.minScore}</span>
+              <span>{t(TIER_T_KEY[th.id], lang)}</span>
             </div>
           ))}
         </div>
@@ -1232,11 +1138,10 @@ function StepIdentity({
                 }}
               >
                 <div className="id-source-info">
-                  <span className="id-source-icon">{src.icon}</span>
                   <div>
-                    <div className="id-source-name">{src.label[lang]}</div>
+                    <div className="id-source-name">{srcLabel(src, lang)}</div>
                     <div className="id-source-desc">
-                      {src.description[lang]}
+                      {src.category}
                     </div>
                   </div>
                 </div>
@@ -1255,7 +1160,7 @@ function StepIdentity({
                   </div>
                 </div>
               </div>
-              {src.slot === "totp" && (
+              {src.id === "totp" && (
                 <div className="same-slot-note">{t("sameSlotNote", lang)}</div>
               )}
             </div>
@@ -1268,8 +1173,15 @@ function StepIdentity({
         <div className="alert alert-success" style={{ marginTop: 16 }}>
           {lang === "no" ? "Tilgangsniva nådd: " : "Access level reached: "}
           <strong>
-            {reachedThreshold.map((th) => t(th.key, lang)).join(", ")}
+            {reachedThreshold.map((th) => t(TIER_T_KEY[th.id], lang)).join(", ")}
           </strong>
+        </div>
+      )}
+
+      {/* Category diversity warning */}
+      {!diversity.met && form.identitySources.length > 0 && (
+        <div className="mt-2 text-sm text-yellow-600 dark:text-yellow-400" style={{ marginTop: 12 }}>
+          ⚠ Velg kilder fra minst 2 kategorier (A: offentlig/forbund, B: fysisk/biometri, C: besittelse/kunnskap).
         </div>
       )}
     </div>
@@ -1877,8 +1789,7 @@ function StepReview({
               {form.identitySources
                 .map(
                   (id) =>
-                    IDENTITY_SOURCES.find((s) => s.id === id)?.label[lang] ??
-                    id
+                    (() => { const s = IDENTITY_SOURCES.find((src) => src.id === id); return s ? srcLabel(s, lang) : id; })()
                 )
                 .join(", ")}
             </span>
@@ -1886,8 +1797,8 @@ function StepReview({
           <div className="review-row">
             <span className="label">{t("thresholds", lang)}</span>
             <span className="value">
-              {THRESHOLDS.filter((th) => identityScore >= th.score)
-                .map((th) => t(th.key, lang))
+              {ACCESS_TIERS.filter((th) => identityScore >= th.minScore)
+                .map((th) => t(TIER_T_KEY[th.id], lang))
                 .join(", ") ||
                 (lang === "no" ? "Ingen nådd" : "None reached")}
             </span>
