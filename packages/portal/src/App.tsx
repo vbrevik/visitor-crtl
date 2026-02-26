@@ -241,6 +241,17 @@ const TIER_T_KEY: Record<TierId, string> = {
   long_term_contractor: "longTerm",
 };
 
+const SOURCE_DESC: Record<string, { no: string; en: string }> = {
+  mil_feide:      { no: "Forsvares OIDC-forbund (under utvikling)", en: "Defense OIDC federation (aspirational)" },
+  id_porten:      { no: "Norsk offentlig eID (BankID = eIDAS Høy)", en: "Norwegian public eID (BankID = eIDAS High)" },
+  passport:       { no: "Gyldig pass med NFC-skanning eller manuell oppføring", en: "Valid passport (NFC scan or manual entry)" },
+  in_person:      { no: "Ansikt-til-ansikt identifisering ved resepsjon", en: "Guard face-to-face verification at reception" },
+  fido2:          { no: "Maskinvare-sikkerhetsnøkkel (FIDO2/WebAuthn)", en: "Hardware security key (FIDO2/WebAuthn)" },
+  totp:           { no: "Autentiserings-app (tidsbasert engangspassord)", en: "Authenticator app (time-based OTP)" },
+  sms_otp:        { no: "SMS engangspassord", en: "SMS one-time password" },
+  email_verified: { no: "E-postbekreftelse via lenke", en: "Email link confirmation" },
+};
+
 function getScoreColor(score: number): string {
   if (score >= 90) return "#2e7d32";
   if (score >= 70) return "#1b5e20";
@@ -1141,7 +1152,7 @@ function StepIdentity({
                   <div>
                     <div className="id-source-name">{srcLabel(src, lang)}</div>
                     <div className="id-source-desc">
-                      {src.category}
+                      {SOURCE_DESC[src.id]?.[lang === "no" ? "no" : "en"] ?? src.label}
                     </div>
                   </div>
                 </div>
@@ -1160,7 +1171,7 @@ function StepIdentity({
                   </div>
                 </div>
               </div>
-              {src.id === "totp" && (
+              {src.slot === "authenticator" && (
                 <div className="same-slot-note">{t("sameSlotNote", lang)}</div>
               )}
             </div>
@@ -1181,7 +1192,9 @@ function StepIdentity({
       {/* Category diversity warning */}
       {!diversity.met && form.identitySources.length > 0 && (
         <div className="mt-2 text-sm text-yellow-600 dark:text-yellow-400" style={{ marginTop: 12 }}>
-          ⚠ Velg kilder fra minst 2 kategorier (A: offentlig/forbund, B: fysisk/biometri, C: besittelse/kunnskap).
+          {lang === "no"
+            ? `⚠ Velg kilder fra minst 2 kategorier. Mangler: ${diversity.missing.join(", ")}.`
+            : `⚠ Select sources from at least 2 categories. Missing: ${diversity.missing.join(", ")}.`}
         </div>
       )}
     </div>

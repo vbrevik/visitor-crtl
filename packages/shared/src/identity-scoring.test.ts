@@ -1,8 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   IDENTITY_SOURCES,
-  REGISTER_MODIFIERS,
-  ACCESS_TIERS,
   computeBaseScore,
   computeVerifiedScore,
   resolveAccessTier,
