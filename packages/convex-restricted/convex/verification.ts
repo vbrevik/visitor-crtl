@@ -69,12 +69,16 @@ export const verifyVisit = action({
 
     // Get visit data for recalculation
     const visit = await ctx.runQuery(internal.visits.getById, { id: args.visitId });
+    if (!visit) {
+      console.error(`verifyVisit: visit ${args.visitId} not found — aborting scoring`);
+      return;
+    }
     const identitySources: string[] = visit?.identitySources ?? [];
     const portalBaseScore: number = visit?.identityScore ?? 0;
 
     // Stage 2: recalculate base score independently (never trust the portal's number)
     const { score: recalcBase } = computeBaseScore(identitySources);
-    const { verifiedScore, blocked, blockReason } = computeVerifiedScore(recalcBase, registerResults);
+    const { verifiedScore, blocked } = computeVerifiedScore(recalcBase, registerResults);
 
     // Stage 3: resolve tier
     const accessTier = blocked ? null : resolveAccessTier(verifiedScore, registerResults);
@@ -92,10 +96,6 @@ export const verifyVisit = action({
         `Score divergence: portal=${portalBaseScore}, restricted=${verifiedScore} (diff=${verifiedScore - portalBaseScore} pts)`
       );
     }
-    if (blocked && blockReason) {
-      flagReasons.push(`BLOCKED: ${blockReason}`);
-    }
-
     // Update visit record with scoring results
     await ctx.runMutation(internal.visits.updateScoringResults, {
       id: args.visitId,
@@ -120,6 +120,9 @@ async function checkFreg(
   if (lastName) params.set("lastName", lastName);
 
   const response = await fetch(`${FREG_URL}?${params}`);
+  if (!response.ok) {
+    throw new Error(`FREG returned HTTP ${response.status}`);
+  }
   const data = await response.json() as { status?: string; found?: boolean };
 
   if (data.status === "deceased" || data.status === "emigrated") {
@@ -142,6 +145,9 @@ async function checkNkr(
   if (lastName) params.set("lastName", lastName);
 
   const response = await fetch(`${NKR_URL}?${params}`);
+  if (!response.ok) {
+    throw new Error(`NKR returned HTTP ${response.status}`);
+  }
   const data = await response.json() as { status?: string; clearanceFound?: boolean; clearanceActive?: boolean };
 
   if (data.status === "revoked") {
@@ -157,9 +163,12 @@ async function checkSapHr(
   employeeId?: string,
 ): Promise<RegisterResult> {
   const params = new URLSearchParams();
-  if (employeeId) params.set("personId", employeeId);
+  if (employeeId) params.set("employeeId", employeeId);
 
   const response = await fetch(`${SAP_URL}?${params}`);
+  if (!response.ok) {
+    throw new Error(`SAP HR returned HTTP ${response.status}`);
+  }
   const data = await response.json() as { found?: boolean };
 
   if (data.found === true) {
