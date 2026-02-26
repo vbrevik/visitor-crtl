@@ -11,6 +11,9 @@ export interface ScoringSource {
   labelNo: string;
 }
 
+/** Type alias for consumers who need the full source definition object */
+export type IdentityScoreSource = ScoringSource;
+
 export const IDENTITY_SOURCES: ScoringSource[] = [
   // Category A — Government / Federation
   { id: "mil_feide",      points: 50, category: "A", label: "Mil Feide (defense federation)", labelNo: "Mil Feide (forsvarsforbund)" },
@@ -92,6 +95,9 @@ export interface ScoringTier {
     brregMustBeValid?: boolean;
   };
 }
+
+/** Type alias for consumers who need the full tier definition object */
+export type IdentityScoreTier = ScoringTier;
 
 export const ACCESS_TIERS: ScoringTier[] = [
   {
@@ -277,7 +283,6 @@ export function resolveAccessTier(
 
 export function generateFlagReasons(
   verifiedScore: number,
-  _resolvedTier: TierId | null,
   registerResults: RegisterResult[],
   diversity: DiversityResult
 ): string[] {

@@ -192,7 +192,6 @@ describe("generateFlagReasons", () => {
   it("produces no flags for Anna (happy path)", () => {
     const flags = generateFlagReasons(
       105,
-      "long_term_contractor",
       [
         { register: "freg", result: "found_alive", modifier: 15 },
         { register: "brreg", result: "active", modifier: 10 },
@@ -205,7 +204,6 @@ describe("generateFlagReasons", () => {
   it("flags Thomas: score < 40, FREG negative, low diversity", () => {
     const flags = generateFlagReasons(
       20,
-      null,
       [{ register: "freg", result: "not_found", modifier: -20 }],
       { met: false, categories: ["B"], missing: ["A", "C"] }
     );
@@ -217,7 +215,6 @@ describe("generateFlagReasons", () => {
   it("flags NKR revocation", () => {
     const flags = generateFlagReasons(
       30,
-      null,
       [{ register: "nkr", result: "revoked", modifier: -50 }],
       { met: true, categories: ["A", "C"], missing: [] }
     );
