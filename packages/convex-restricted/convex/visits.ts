@@ -3,6 +3,7 @@
  */
 import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
+import { logAudit } from "./auditLog";
 
 /** Valid state transitions for the visit state machine. */
 const STATE_TRANSITIONS: Record<string, string[]> = {
@@ -88,6 +89,19 @@ export const transitionVisit = mutation({
 
     await ctx.db.patch(args.visitId, { status: args.newStatus });
 
+    await logAudit(ctx, {
+      eventType: `VISIT_${args.newStatus.toUpperCase()}`,
+      actorId: "system", // TODO: pass real actor from auth context (E13)
+      actorRole: "system",
+      subjectType: "visit",
+      subjectId: args.visitId,
+      payload: JSON.stringify({
+        previousState: visit.status,
+        newState: args.newStatus,
+        reason: args.reason,
+      }),
+    });
+
     // Queue status update to unclassified side
     await ctx.db.insert("diodeOutbox", {
       messageType: "VISIT_STATUS_UPDATE",
@@ -118,6 +132,15 @@ export const checkInVisitor = mutation({
       status: "checked_in",
       checkedInAt: Date.now(),
     });
+
+    await logAudit(ctx, {
+      eventType: "VISIT_CHECKED_IN",
+      actorId: "system",
+      actorRole: "guard",
+      subjectType: "visit",
+      subjectId: args.visitId,
+      payload: JSON.stringify({ checkedInAt: Date.now() }),
+    });
   },
 });
 
@@ -134,6 +157,15 @@ export const checkOutVisitor = mutation({
     await ctx.db.patch(args.visitId, {
       status: "checked_out",
       checkedOutAt: Date.now(),
+    });
+
+    await logAudit(ctx, {
+      eventType: "VISIT_CHECKED_OUT",
+      actorId: "system",
+      actorRole: "guard",
+      subjectType: "visit",
+      subjectId: args.visitId,
+      payload: JSON.stringify({ checkedOutAt: Date.now() }),
     });
 
     // Queue status update to unclassified side
@@ -160,7 +192,7 @@ export const receiveFromDiode = internalMutation({
   handler: async (ctx, args) => {
     const data = JSON.parse(args.payload);
 
-    await ctx.db.insert("visits", {
+    const visitId = await ctx.db.insert("visits", {
       status: "received",
       visitorType: data.visitorType,
       firstName: data.firstName,
@@ -179,6 +211,19 @@ export const receiveFromDiode = internalMutation({
       identitySources: data.identitySources ?? [],
       approvalTier: "sponsor", // TODO: determine from access level
       diodeCorrelationId: args.correlationId,
+    });
+
+    await logAudit(ctx, {
+      eventType: "VISIT_RECEIVED",
+      actorId: "system",
+      actorRole: "diode",
+      subjectType: "visit",
+      subjectId: visitId,
+      payload: JSON.stringify({
+        correlationId: args.correlationId,
+        visitorType: data.visitorType,
+        siteId: data.siteId,
+      }),
     });
   },
 });
@@ -228,6 +273,21 @@ export const updateScoringResults = internalMutation({
       registerResults: args.registerResults,
       scoreDivergent: args.scoreDivergent,
     });
+
+    await logAudit(ctx, {
+      eventType: "SCORING_UPDATED",
+      actorId: "system",
+      actorRole: "verification_service",
+      subjectType: "visit",
+      subjectId: args.id,
+      payload: JSON.stringify({
+        baseScore: args.baseScore,
+        verifiedScore: args.verifiedScore,
+        accessTier: args.accessTier,
+        scoreDivergent: args.scoreDivergent,
+        flagCount: args.flagReasons.length,
+      }),
+    });
   },
 });
 
@@ -262,6 +322,18 @@ export const cancelFromDiode = internalMutation({
     }
 
     await ctx.db.patch(visit._id, { status: "cancelled" });
+
+    await logAudit(ctx, {
+      eventType: "VISIT_CANCELLED",
+      actorId: "system",
+      actorRole: "diode",
+      subjectType: "visit",
+      subjectId: visit._id,
+      payload: JSON.stringify({
+        correlationId: args.correlationId,
+        reason: data.reason ?? "Cancelled by visitor",
+      }),
+    });
 
     // Queue cancellation acknowledgement to unclassified side
     await ctx.db.insert("diodeOutbox", {
