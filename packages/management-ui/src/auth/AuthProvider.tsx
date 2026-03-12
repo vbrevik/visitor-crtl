@@ -115,6 +115,33 @@ function mapUser(oidcUser: User): AuthUser {
 // Provider Component
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Dev bypass mock users (used when Keycloak is not running)
+// ---------------------------------------------------------------------------
+
+const DEV_USERS: Record<string, AuthUser> = {
+  "admin.johansen": {
+    sub: "dev-admin-johansen",
+    name: "Per Johansen",
+    firstName: "Per",
+    lastName: "Johansen",
+    email: "per.johansen@forsvaret.no",
+    roles: ["admin"],
+    accessToken: "dev-token-admin",
+    attributes: { employee_id: "FD-9001", site_id: "ALL" },
+  },
+  "admin.nilsen": {
+    sub: "dev-admin-nilsen",
+    name: "Grete Nilsen",
+    firstName: "Grete",
+    lastName: "Nilsen",
+    email: "grete.nilsen@forsvaret.no",
+    roles: ["admin"],
+    accessToken: "dev-token-admin-2",
+    attributes: { employee_id: "FD-9002", site_id: "ALL" },
+  },
+};
+
 export function AuthProvider({
   config,
   children,
@@ -126,6 +153,10 @@ export function AuthProvider({
   const [oidcUser, setOidcUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const callbackProcessed = useRef(false);
+
+  // Dev bypass state
+  const [devUser, setDevUser] = useState<AuthUser | null>(null);
+  const [devBypass, setDevBypass] = useState(false);
 
   useEffect(() => {
     const isCallback = window.location.pathname === "/callback" ||
@@ -171,17 +202,82 @@ export function AuthProvider({
     };
   }, [userManager]);
 
-  const login = useCallback(
-    () => userManager.signinRedirect(),
-    [userManager]
-  );
+  const login = useCallback(async () => {
+    // Try Keycloak first; if it fails (not running), activate dev bypass
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 2000);
+      await fetch(config.authority + "/.well-known/openid-configuration", {
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      // Keycloak is reachable — do normal redirect
+      await userManager.signinRedirect();
+    } catch {
+      // Keycloak not reachable — activate dev bypass picker
+      setDevBypass(true);
+      setIsLoading(false);
+    }
+  }, [userManager, config.authority]);
 
-  const logout = useCallback(
-    () => userManager.signoutRedirect(),
-    [userManager]
-  );
+  const logout = useCallback(async () => {
+    if (devUser) {
+      setDevUser(null);
+      setDevBypass(false);
+      return;
+    }
+    await userManager.signoutRedirect();
+  }, [userManager, devUser]);
 
-  const user = oidcUser ? mapUser(oidcUser) : null;
+  const user = devUser ?? (oidcUser ? mapUser(oidcUser) : null);
+
+  // Show dev user picker when bypass is active and no user selected
+  if (devBypass && !devUser) {
+    return (
+      <AuthContext.Provider
+        value={{ user: null, isLoading: false, isAuthenticated: false, login, logout, oidcUser: null }}
+      >
+        <div style={{
+          maxWidth: 420, margin: "80px auto", padding: 32, fontFamily: "system-ui, sans-serif",
+          background: "#1a1a2e", borderRadius: 12, border: "1px solid #333",
+        }}>
+          <div style={{ textAlign: "center", marginBottom: 20 }}>
+            <span style={{ fontSize: 28, color: "#f59e0b" }}>&#9888;</span>
+            <h2 style={{ margin: "8px 0 4px", color: "#e5e5e5" }}>Dev Bypass</h2>
+            <p style={{ color: "#999", fontSize: 13, margin: 0 }}>
+              Keycloak not reachable — select a test user
+            </p>
+          </div>
+          {Object.entries(DEV_USERS).map(([key, u]) => (
+            <button
+              key={key}
+              onClick={() => setDevUser(u)}
+              style={{
+                display: "block", width: "100%", padding: "12px 16px", marginBottom: 8,
+                background: "#16213e", border: "1px solid #444", borderRadius: 8, cursor: "pointer",
+                textAlign: "left", color: "#e5e5e5", fontSize: 14,
+              }}
+            >
+              <strong>{u.name}</strong>
+              <span style={{ color: "#888", marginLeft: 8, fontSize: 12 }}>
+                {key} — {u.roles.join(", ")}
+              </span>
+            </button>
+          ))}
+          <button
+            onClick={() => { setDevBypass(false); }}
+            style={{
+              display: "block", width: "100%", padding: "8px 16px", marginTop: 8,
+              background: "transparent", border: "1px solid #555", borderRadius: 8,
+              cursor: "pointer", color: "#888", fontSize: 12,
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </AuthContext.Provider>
+    );
+  }
 
   return (
     <AuthContext.Provider

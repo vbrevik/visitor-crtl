@@ -32,6 +32,9 @@ npm-debug.log*
 # Test coverage
 coverage/
 
+# Worktrees
+.worktrees/
+
 # Kubernetes secrets (never commit)
 *-secret.yaml
 *.pem

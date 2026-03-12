@@ -1,0 +1,21 @@
+{
+  "name": "presentation",
+  "version": "1.0.0",
+  "main": "capture-screenshots.js",
+  "scripts": {
+    "avatars": "node generate-avatars.js",
+    "seed": "node seed-data.js",
+    "capture": "node capture-screenshots.js",
+    "build": "node build-presentation.js",
+    "all": "node generate-avatars.js && node seed-data.js && node capture-screenshots.js && node build-presentation.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "playwright": "^1.58.2",
+    "pptxgenjs": "^4.0.1",
+    "sharp": "^0.34.5"
+  }
+}

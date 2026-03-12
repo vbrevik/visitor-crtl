@@ -256,7 +256,8 @@ export const updateScoringResults = internalMutation({
         v.literal("freg"),
         v.literal("nkr"),
         v.literal("brreg"),
-        v.literal("sap_hr")
+        v.literal("sap_hr"),
+        v.literal("nar")
       ),
       result: v.string(),
       modifier: v.number(),

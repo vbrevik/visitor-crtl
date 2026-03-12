@@ -41,6 +41,19 @@ export interface VisitRequest {
   sponsorName?: string;
   identityScore: number;
   identitySources: IdentitySource[];
+  additionalSites?: string[];
+}
+
+/** Per-site badge encoding status for cross-site visits */
+export type SiteEncodingStatusType = "pending" | "encoded" | "failed" | "pending_retry";
+
+export interface SiteEncodingStatus {
+  siteId: string;
+  status: SiteEncodingStatusType;
+  onguardBadgeKey?: number;
+  error?: string;
+  lastAttempt?: string; // ISO date
+  attempts: number;
 }
 
 export type IdentitySource =
@@ -76,6 +89,8 @@ export interface Visit {
   approvalTier: ApprovalTier;
   badgeId?: string;
   accessLevelIds?: string[];
+  additionalSites?: string[];
+  siteEncodingStatus?: SiteEncodingStatus[];
   createdAt: string;
   updatedAt: string;
 }

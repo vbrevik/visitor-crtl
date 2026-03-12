@@ -1,8 +1,9 @@
+"use node";
 /**
  * Verification service — orchestrates register checks (FREG, NKR, SAP HR, NAR).
  * Uses Convex actions for external HTTP calls to register stubs.
  */
-import { action, internalMutation } from "./_generated/server";
+import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import {
@@ -17,23 +18,25 @@ import {
 const FREG_URL = process.env.FREG_URL ?? "http://mock-registers:8081/freg";
 const NKR_URL = process.env.NKR_URL ?? "http://mock-registers:8081/nkr";
 const SAP_URL = process.env.SAP_URL ?? "http://mock-registers:8081/sap";
+const NAR_URL = process.env.NAR_URL ?? "http://mock-registers:8081/nar";
 
 /** Run all verification checks for a visit in parallel. */
 export const verifyVisit = action({
-  args: { visitId: v.id("visits"), firstName: v.string(), lastName: v.string(), personId: v.optional(v.string()), sponsorEmployeeId: v.optional(v.string()) },
+  args: { visitId: v.id("visits"), firstName: v.string(), lastName: v.string(), personId: v.optional(v.string()), sponsorEmployeeId: v.optional(v.string()), siteId: v.string() },
   handler: async (ctx, args) => {
-    const [fregResult, nkrResult, sapResult] = await Promise.allSettled([
+    const [fregResult, nkrResult, sapResult, narResult] = await Promise.allSettled([
       checkFreg(args.personId, args.firstName, args.lastName),
       checkNkr(args.personId, args.firstName, args.lastName),
-      checkSapHr(args.sponsorEmployeeId),
+      checkSapHr(args.sponsorEmployeeId, args.siteId),
+      checkNar(args.personId, args.siteId),
     ]);
 
     // Save individual verification results to the verifications table
-    const sources = ["freg", "nkr", "sap_hr"] as const;
-    const allResults = [fregResult, nkrResult, sapResult];
+    const sources = ["freg", "nkr", "sap_hr", "nar"] as const;
+    const allResults = [fregResult, nkrResult, sapResult, narResult];
     for (let i = 0; i < allResults.length; i++) {
       const result = allResults[i];
-      await ctx.runMutation(internal.verification.saveResult, {
+      await ctx.runMutation(internal.verificationMutations.saveResult, {
         visitId: args.visitId,
         source: sources[i],
         status: result.status === "fulfilled" ? result.value.result : "failed",
@@ -65,6 +68,13 @@ export const verifyVisit = action({
     } else {
       // SAP HR unavailable — neutral (no modifier applied)
       registerResults.push({ register: "sap_hr", result: "not_employee", modifier: 0 });
+    }
+
+    if (narResult.status === "fulfilled") {
+      registerResults.push(narResult.value);
+    } else {
+      // NAR unavailable — neutral (no modifier applied)
+      registerResults.push({ register: "nar", result: "no_authorization", modifier: 0 });
     }
 
     // Get visit data for recalculation
@@ -167,6 +177,7 @@ async function checkNkr(
 
 async function checkSapHr(
   employeeId?: string,
+  siteId?: string,
 ): Promise<RegisterResult> {
   const params = new URLSearchParams();
   if (employeeId) params.set("employeeId", employeeId);
@@ -175,28 +186,62 @@ async function checkSapHr(
   if (!response.ok) {
     throw new Error(`SAP HR returned HTTP ${response.status}`);
   }
-  const data = await response.json() as { found?: boolean };
+  const data = await response.json() as { found?: boolean; site?: string };
 
   if (data.found === true) {
-    return { register: "sap_hr", result: "employee", modifier: 10 };
+    // Informational: note if sponsor is at a different site (does not block)
+    const crossSite = siteId && data.site && data.site !== siteId;
+    return {
+      register: "sap_hr",
+      result: "employee",
+      modifier: 10,
+      ...(crossSite ? { flag: `sponsor_cross_site:${data.site}` } : {}),
+    };
   }
   return { register: "sap_hr", result: "not_employee", modifier: 0 };
 }
 
-export const saveResult = internalMutation({
-  args: {
-    visitId: v.id("visits"),
-    source: v.string(),
-    status: v.string(),
-    details: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    await ctx.db.insert("verifications", {
-      visitId: args.visitId,
-      source: args.source,
-      status: args.status,
-      details: args.details,
-      checkedAt: Date.now(),
-    });
-  },
-});
+interface NarPhysicalAuth {
+  status: string;
+  constraints: { escortRequired: boolean };
+  scope: { displayName: string; classification: string };
+}
+
+async function checkNar(
+  personId?: string,
+  siteId?: string,
+): Promise<RegisterResult & { escortRequired?: boolean }> {
+  const params = new URLSearchParams();
+  if (personId) params.set("personId", personId);
+  if (siteId) params.set("siteId", siteId);
+
+  const response = await fetch(`${NAR_URL}/authorization/physical?${params}`);
+  if (!response.ok) {
+    throw new Error(`NAR returned HTTP ${response.status}`);
+  }
+  const data = await response.json() as { found: boolean; authorizations: NarPhysicalAuth[] };
+
+  if (!data.found || !data.authorizations || data.authorizations.length === 0) {
+    return { register: "nar", result: "no_authorization", modifier: 0 };
+  }
+
+  // Find the best authorization: active > expired > revoked
+  const active = data.authorizations.filter((a) => a.status === "active");
+  const expired = data.authorizations.filter((a) => a.status === "expired");
+  const revoked = data.authorizations.filter((a) => a.status === "revoked");
+
+  if (active.length > 0) {
+    const escortRequired = active.some((a) => a.constraints.escortRequired);
+    return { register: "nar", result: "authorized", modifier: 15, escortRequired };
+  }
+  if (revoked.length === data.authorizations.length) {
+    return { register: "nar", result: "revoked_authorization", modifier: -30 };
+  }
+  if (expired.length === data.authorizations.length) {
+    return { register: "nar", result: "expired_authorization", modifier: -10 };
+  }
+
+  // Mixed non-active statuses — no active authorization
+  return { register: "nar", result: "no_authorization", modifier: 0 };
+}
+

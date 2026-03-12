@@ -30,7 +30,7 @@ export const IDENTITY_SOURCES: ScoringSource[] = [
 
 // ─── Register Modifier Definitions ────────────────────────────────────────────
 
-export type RegisterName = "freg" | "nkr" | "brreg" | "sap_hr";
+export type RegisterName = "freg" | "nkr" | "brreg" | "sap_hr" | "nar";
 export type RegisterResultType =
   | "found_alive"
   | "not_found"
@@ -43,13 +43,19 @@ export type RegisterResultType =
   | "dissolved"
   | "company_not_found"
   | "employee"
-  | "not_employee";
+  | "not_employee"
+  | "authorized"
+  | "expired_authorization"
+  | "revoked_authorization"
+  | "no_authorization";
 
 export interface RegisterResult {
   register: RegisterName;
   result: RegisterResultType;
   modifier: number;
   block?: boolean;
+  /** Informational flag (e.g. sponsor_cross_site) — does not affect scoring */
+  flag?: string;
 }
 
 export const REGISTER_MODIFIERS: Record<RegisterName, Partial<Record<RegisterResultType, { modifier: number; block?: boolean }>>> = {
@@ -73,6 +79,12 @@ export const REGISTER_MODIFIERS: Record<RegisterName, Partial<Record<RegisterRes
     employee:     { modifier: 10 },
     not_employee: { modifier: 0 },
   },
+  nar: {
+    authorized:             { modifier: 15 },
+    expired_authorization:  { modifier: -10 },
+    revoked_authorization:  { modifier: -30 },
+    no_authorization:       { modifier: 0 },
+  },
 };
 
 // ─── Access Tier Definitions ──────────────────────────────────────────────────
@@ -94,6 +106,7 @@ export interface ScoringTier {
     nkrNoFlags?: boolean;
     nkrActiveClearanceRequired?: boolean;
     brregMustBeValid?: boolean;
+    narAuthorizationRequired?: boolean;
   };
 }
 
@@ -266,6 +279,11 @@ function brregIsValid(results: RegisterResult[]): boolean {
   return brreg.result === "active";
 }
 
+function narIsAuthorized(results: RegisterResult[]): boolean {
+  const nar = results.find((r) => r.register === "nar");
+  return nar?.result === "authorized";
+}
+
 export function resolveAccessTier(
   verifiedScore: number,
   registerResults: RegisterResult[]
@@ -281,6 +299,7 @@ export function resolveAccessTier(
     if (g.nkrNoFlags && !nkrHasNoFlags(registerResults)) continue;
     if (g.nkrActiveClearanceRequired && !nkrHasActiveClearance(registerResults)) continue;
     if (g.brregMustBeValid && !brregIsValid(registerResults)) continue;
+    if (g.narAuthorizationRequired && !narIsAuthorized(registerResults)) continue;
 
     return tier.id;
   }
@@ -315,6 +334,9 @@ export function generateFlagReasons(
     }
     if (rr.register === "nkr" && rr.result === "revoked") {
       flags.push("NKR: clearance revoked — immediate suspension if on-site");
+    }
+    if (rr.register === "nar" && rr.result === "revoked_authorization") {
+      flags.push("NAR: authorization revoked — requires immediate review");
     }
   }
 

@@ -6,6 +6,8 @@ import { action, internalMutation } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 
+// eslint-disable-next-line no-var
+declare var process: { env: Record<string, string | undefined> };
 const BRREG_STUB_URL =
   process.env.BRREG_URL ?? "http://mock-registers:8081/brreg";
 

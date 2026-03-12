@@ -1,0 +1,1044 @@
+{
+  "meta": {
+    "title": "Besøksstyringssystem — System Walkthrough",
+    "subtitle": "Step-by-step demonstration of the visitor lifecycle",
+    "author": "VMS Project Team",
+    "date": "2026-02-25",
+    "layout": "16:9",
+    "colorScheme": {
+      "primary": "#1C2833",
+      "secondary": "#2E86C1",
+      "accent": "#E74C3C",
+      "bg": "#FFFFFF",
+      "lightBg": "#F4F6F7",
+      "text": "#2C3E50",
+      "muted": "#7F8C8D"
+    }
+  },
+  "stories": {
+    "A": { "label": "Happy Path",       "color": "#2E86C1", "icon": "check" },
+    "B": { "label": "Flagged Review",   "color": "#E67E22", "icon": "warning" },
+    "C": { "label": "Walk-In",          "color": "#27AE60", "icon": "walk" },
+    "D": { "label": "Denied",           "color": "#C0392B", "icon": "block" },
+    "E": { "label": "Cross-Site",       "color": "#8E44AD", "icon": "sites" }
+  },
+  "characters": {
+    "anna":    { "name": "Anna Lindqvist",    "company": "Kongsberg Defence & Aerospace", "avatar": "avatars/anna.png",    "role": "External Visitor" },
+    "thomas":  { "name": "Thomas Müller",     "company": "Rheinmetall Defence GmbH",      "avatar": "avatars/thomas.png",  "role": "Foreign Contractor" },
+    "petter":  { "name": "Petter Svendsen",   "company": "NorLog Levering AS",            "avatar": "avatars/petter.png",  "role": "Delivery / Walk-in" },
+    "ivan":    { "name": "Ivan Petrov",       "company": "Unknown Technologies LLC",       "avatar": "avatars/ivan.png",    "role": "Unknown Visitor" },
+    "marte":   { "name": "Marte Haugen",      "company": "Forsvarsdepartementet, Avd. Nord", "avatar": "avatars/marte.png", "role": "In-House Employee" },
+    "fatima":  { "name": "Fatima Al-Rashid",  "company": "Aker Solutions ASA",             "avatar": "avatars/fatima.png",  "role": "External Visitor" },
+    "sponsor": { "name": "Maj. Ola Hansen",   "company": "SITE-A, Vertskap/Sponsor",       "avatar": "avatars/sponsor.png", "role": "Sponsor" },
+    "guard":   { "name": "Korp. Petter Olsen","company": "SITE-A, Vaktsentral",            "avatar": "avatars/guard.png",   "role": "Guard" },
+    "security":{ "name": "Kapt. Eva Berg",    "company": "SITE-A, Sikkerhetsoffiser",      "avatar": "avatars/security.png","role": "Security Officer" }
+  },
+  "slides": [
+    {
+      "id": "title",
+      "type": "title",
+      "title": "Besøksstyringssystem",
+      "subtitle": "Visitor Management System — System Walkthrough",
+      "notes": "This presentation demonstrates the complete visitor management system through realistic scenarios. We follow six visitors through the system — from a smooth visit to a security denial — showing how each role interacts with the system at every step."
+    },
+    {
+      "id": "cast",
+      "type": "cast",
+      "title": "Cast of Characters",
+      "description": "Six visitors, three system roles — each storyline shows a different path through the system.",
+      "visitors": ["anna", "thomas", "petter", "ivan", "marte", "fatima"],
+      "operators": ["sponsor", "guard", "security"],
+      "notes": "The six visitors represent realistic scenarios: a routine external visit (Anna), a foreign contractor requiring security review (Thomas), an unannounced walk-in delivery (Petter), a denied visitor with verification failures (Ivan), a smooth in-house employee visit (Marte), and a pending request still awaiting sponsor action (Fatima)."
+    },
+    {
+      "id": "problem",
+      "type": "explanation",
+      "step": null,
+      "title": "The Problem: Why a New Visitor Management System?",
+      "description": "Defense installations handle hundreds of visitors weekly — external contractors, foreign nationals, walk-in deliveries, and cross-site employees. Today's process is fragmented across disconnected systems, paper logs, and manual badge management. The result: slow onboarding, inconsistent identity checks, limited audit trails, and no centralized visibility.",
+      "bullets": [
+        "Manual, paper-based visitor protocols that don't scale across sites",
+        "No unified identity verification — each site operates independently",
+        "Limited audit trail for security incidents and compliance (NSM, NIST CSF 2.0)",
+        "Badge management tied to physical presence — no automated activation/deactivation",
+        "Air-gapped RESTRICTED infrastructure adds complexity to every integration",
+        "Norwegian regulatory requirements: Sikkerhetsloven, GDPR, NSM guidelines"
+      ],
+      "notes": "The core challenge is building a system that spans an air gap — external visitors register on UNCLASSIFIED, but all access decisions must be made on RESTRICTED. Current paper-based processes can't provide the audit trail required by Sikkerhetsloven or the automation needed to scale across multiple sites."
+    },
+    {
+      "id": "tech-environment",
+      "type": "explanation",
+      "step": null,
+      "title": "Technological Environment",
+      "description": "The system operates across two classification levels separated by data diodes. Each side has its own infrastructure, databases, and authentication. The mock environment replicates this on a single machine using Kubernetes namespaces.",
+      "bullets": [
+        "UNCLASSIFIED: Visitor Portal, Sponsor App, ID-porten auth, Brønnøysund lookups",
+        "RESTRICTED: Guard UI, Security UI, OnGuard 8.x, FREG, NKR, SAP HR",
+        "Data Diode: Bidirectional XML over NATS (2 unidirectional channels)",
+        "Auth: Mil Feide (defense OIDC) + ID-porten, both via Keycloak",
+        "Stack: TypeScript end-to-end — React frontends, Convex reactive backend",
+        "Infrastructure: On-prem K3s Kubernetes, PostgreSQL, Splunk, MIFARE DESFire EV3"
+      ],
+      "notes": "Key constraint: no direct RESTRICTED-to-RESTRICTED paths between sites. Cross-site messages route: Site A RESTRICTED → Diode → Unclass WAN → Diode → Site B RESTRICTED. Each site must operate independently if WAN fails."
+    },
+    {
+      "id": "approach",
+      "type": "explanation",
+      "step": null,
+      "title": "Approach: Three-Layer Verification Model",
+      "description": "We solve this with a three-layer model: identity verification, approval workflows, and physical access control. The RESTRICTED side is the sole authority for all access decisions. An identity scoring model (100-point scale, Australian-style) provides quantitative risk assessment at every stage.",
+      "bullets": [
+        "Layer 1 — Identity: Pre-registration (ID-porten), deep verification (FREG, NKR), 100-point scoring",
+        "Layer 2 — Approval: Sponsor approval + security officer review, batch and ad-hoc paths",
+        "Layer 3 — Physical: DESFire EV3 multi-app badges, time-bounded access, automated escort tracking",
+        "Diode-agnostic messaging: Abstracted gateway supporting multiple diode vendors per site",
+        "Design for accreditation: Security review ready from day one, continuous pentest cadence",
+        "Mock-first development: Full lifecycle demo on single machine validates architecture"
+      ],
+      "notes": "The identity scoring model assigns points per verification source: ID-porten (40), passport (25), Mil Feide (40), FIDO2 (20), email (10), phone (5). Threshold is 60 points. Foreign nationals without Norwegian eID must compensate with additional documentation."
+    },
+    {
+      "id": "project-plan",
+      "type": "gantt",
+      "title": "Project Plan & Timeline",
+      "phases": [
+        { "name": "Foundation", "label": "Namespaces, DBs, NATS, Keycloak", "startWeek": 1, "endWeek": 2, "color": "secondary" },
+        { "name": "Mock APIs", "label": "OnGuard, FREG, NKR, SAP, Brønnøysund", "startWeek": 2, "endWeek": 3, "color": "storyC" },
+        { "name": "Core Services", "label": "Diode gateway, Convex backends, state machine", "startWeek": 3, "endWeek": 5, "color": "storyA" },
+        { "name": "User Interfaces", "label": "Guard, Security, Portal, Sponsor apps", "startWeek": 5, "endWeek": 7, "color": "storyB" },
+        { "name": "Integration", "label": "Production OnGuard, FREG/NKR, Mil Feide", "startWeek": 7, "endWeek": 10, "color": "accent" }
+      ],
+      "milestones": [
+        { "label": "Mock env functional", "week": 3 },
+        { "label": "Architecture proven", "week": 5 },
+        { "label": "Stakeholder demo ready", "week": 7 },
+        { "label": "Accreditation review", "week": 10 }
+      ],
+      "deliverables": [
+        "Week 2: Kubernetes namespaces + network policies + Keycloak realms operational",
+        "Week 3: All mock APIs responding, test data seeded, diode delay proxy working",
+        "Week 5: End-to-end message flow through diodes, state machine verified",
+        "Week 7: All 5 UIs functional, full visitor lifecycle demonstrable",
+        "Week 10: Production integrations validated, pentest completed"
+      ],
+      "notes": "Phase 0 (Foundation + Mock APIs) validates critical assumptions before committing to full build. Key risks: OnGuard API surface may be insufficient (Phase 0 spike), DESFire multi-app compatibility (early prototyping), diode vendor heterogeneity across sites (abstraction layer). Build order is designed so each phase produces a demonstrable increment."
+    },
+    {
+      "id": "process-flow",
+      "type": "bpmn",
+      "title": "Visitor Lifecycle — Process Flow (BPMN 2.0)",
+      "lanes": [
+        { "name": "Visitor", "color": "secondary" },
+        { "name": "Sponsor", "color": "storyB" },
+        { "name": "Diode / System", "color": "muted" },
+        { "name": "Security Officer", "color": "accent" },
+        { "name": "Guard", "color": "storyC" }
+      ],
+      "nodes": [
+        { "lane": 0, "type": "start",    "label": "Start",           "col": 0 },
+        { "lane": 0, "type": "task",     "label": "Register\nvia Portal",  "col": 1 },
+        { "lane": 0, "type": "task",     "label": "Identity\nScoring",     "col": 2 },
+        { "lane": 1, "type": "task",     "label": "Review &\nApprove",     "col": 3 },
+        { "lane": 2, "type": "task",     "label": "Diode\nTransfer",       "col": 4 },
+        { "lane": 2, "type": "task",     "label": "FREG / NKR\nVerify",    "col": 5 },
+        { "lane": 3, "type": "gateway",  "label": "Score\n≥ 60?",          "col": 6 },
+        { "lane": 3, "type": "task",     "label": "Manual\nReview",        "col": 7, "optional": true },
+        { "lane": 4, "type": "task",     "label": "Check-In\n& Badge",     "col": 8 },
+        { "lane": 4, "type": "task",     "label": "Escort\nAssigned",      "col": 9 },
+        { "lane": 0, "type": "task",     "label": "Visit\nActive",         "col": 10 },
+        { "lane": 4, "type": "task",     "label": "Check-Out\n& Deactivate", "col": 11 },
+        { "lane": 0, "type": "end",      "label": "End",             "col": 12 }
+      ],
+      "flows": [
+        [0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,8,"yes"],[6,7,"no"],[7,8],[8,9],[9,10],[10,11],[11,12]
+      ],
+      "notes": "BPMN 2.0 process flow showing the standard visitor lifecycle. The gateway at the Security Officer lane represents the identity score threshold check — visitors scoring below 60 are routed through manual review. All state transitions are logged for audit compliance."
+    },
+    {
+      "id": "architecture",
+      "type": "diagram",
+      "title": "System Architecture Overview",
+      "description": "The system operates across an air gap. External visitors and sponsors interact via UNCLASSIFIED services. All access decisions are made on the RESTRICTED side. Data diodes carry XML messages between the two sides.",
+      "bullets": [
+        "UNCLASSIFIED: Portal, Sponsor App, Contractor Admin",
+        "RESTRICTED: Guard UI, Security UI, OnGuard, FREG, NKR",
+        "Bidirectional XML data diodes (NATS messaging)",
+        "Keycloak authentication (ID-porten + Mil Feide)"
+      ],
+      "screenshot": "screenshots/management-system-overview.png",
+      "annotations": [
+        {"text": "9 services monitored across both network segments", "position": "top-right"}
+      ]
+    },
+    {
+      "id": "step1-portal-landing",
+      "type": "walkthrough",
+      "step": 1,
+      "title": "Step 1 — Visitor Opens the Portal",
+      "story": "A",
+      "character": "anna",
+      "description": "Anna Lindqvist from Kongsberg Defence navigates to the visitor portal. She needs to attend a technical review meeting for Project PEGASUS at SITE-A. The portal greets her in Norwegian with an ID-porten login button.",
+      "screenshot": "screenshots/01-portal-landing.png",
+      "annotations": [
+        {"text": "Anna sees the bilingual landing page", "position": "top-left"},
+        {"text": "She authenticates via BankID through ID-porten", "position": "center-right"}
+      ]
+    },
+    {
+      "id": "step2-portal-dashboard",
+      "type": "walkthrough",
+      "step": 2,
+      "title": "Step 2 — Visit Dashboard",
+      "story": "A",
+      "character": "anna",
+      "description": "After logging in, Anna sees her personal dashboard. All her visit requests are listed with status indicators. She can see her visit to SITE-A for Project PEGASUS is already 'Godkjent' (approved) alongside other visitors' requests.",
+      "screenshot": "screenshots/02-portal-register.png",
+      "annotations": [
+        {"text": "All 5 visitor requests visible with status badges", "position": "top-left"},
+        {"text": "Anna's visit is approved; Fatima's is still pending", "position": "center-right"}
+      ]
+    },
+    {
+      "id": "step3-portal-wizard",
+      "type": "walkthrough",
+      "step": 3,
+      "title": "Step 3 — Registration Wizard",
+      "story": "A",
+      "character": "anna",
+      "description": "When Anna clicked '+ Nytt besøk', she entered a 5-step wizard. Step 1 pre-fills her name from ID-porten and asks for visit type, purpose, site, dates, and host. The wizard then guides her through identity scoring, company verification, and a safety course.",
+      "screenshot": "screenshots/03-portal-identity.png",
+      "annotations": [
+        {"text": "5-step wizard with progress indicator", "position": "top-left"},
+        {"text": "Name pre-filled from ID-porten authentication", "position": "center-right"}
+      ]
+    },
+    {
+      "id": "tech-identity-scoring",
+      "type": "technical",
+      "title": "Identity Scoring Model — 100-Point System",
+      "description": "Adapted from Australia's 100-point identity check. Each verification source earns points in one of three categories. Slot-based deduplication prevents double-counting (e.g., FIDO2 and TOTP both fill the 'authenticator' slot — only the highest wins).",
+      "sections": [
+        {
+          "heading": "Category A — Government / Federation",
+          "items": [
+            "Mil Feide (defense federation): 50 pts",
+            "ID-porten / BankID: 40 pts"
+          ]
+        },
+        {
+          "heading": "Category B — Physical / Biometric",
+          "items": [
+            "Valid passport: 35 pts",
+            "In-person guard verification: 30 pts"
+          ]
+        },
+        {
+          "heading": "Category C — Possession / Knowledge",
+          "items": [
+            "FIDO2 hardware key: 20 pts (slot: authenticator)",
+            "TOTP app: 15 pts (slot: authenticator)",
+            "SMS OTP: 10 pts",
+            "Email verification: 5 pts"
+          ]
+        },
+        {
+          "heading": "Scoring Pipeline (3 Stages)",
+          "items": [
+            "Stage 1: Portal computes baseScore from identity sources",
+            "Stage 2: RESTRICTED recalculates + applies register modifiers",
+            "Stage 3: Resolve highest qualifying access tier via hardGates"
+          ]
+        }
+      ],
+      "justification": [
+        "100-point scale: Provides granular risk differentiation vs. binary pass/fail — enables tiered access instead of all-or-nothing",
+        "Category diversity: Requires sources from ≥2 categories, preventing single-vector identity fraud",
+        "Slot deduplication: Prevents inflating score by stacking similar authenticators (e.g., 3 TOTP apps)",
+        "Dual computation: Portal score is untrusted — RESTRICTED recalculates independently; divergence >10pts triggers automatic flag",
+        "Australian model: Proven at national scale, well-documented, adaptable to Norwegian defense context"
+      ],
+      "notes": "The identity scoring model is implemented in packages/shared/src/identity-scoring.ts and shared between portal and restricted backends. Max achievable score is 190 (all sources + all positive register modifiers), but typical high-trust visitors score 85-110."
+    },
+    {
+      "id": "step4-diode",
+      "type": "explanation",
+      "step": 4,
+      "title": "Step 4 — Crossing the Air Gap",
+      "description": "Anna's visit request is submitted and queued for the data diode. The diode gateway wraps it in an XML envelope with a SHA-256 checksum and publishes it to NATS. After a 2-second simulated diode delay, the restricted-side gateway receives the message and creates a visit record for verification.",
+      "bullets": [
+        "XML envelope with SHA-256 integrity checksum",
+        "NATS pub/sub between gateway pairs",
+        "2s delay ± 1s jitter simulating physical diode",
+        "At-least-once delivery with idempotency checks"
+      ]
+    },
+    {
+      "id": "tech-diode-architecture",
+      "type": "technical",
+      "title": "Diode Message Architecture",
+      "description": "Messages cross the air gap via an outbox/inbox pattern. Each side has a diodeOutbox table (pending messages) and diodeInbox table (received messages). The gateway polls outbox, wraps in XML, publishes to NATS. The receiving gateway writes to inbox for processing.",
+      "sections": [
+        {
+          "heading": "Message Envelope",
+          "items": [
+            "XML wrapper with messageType, correlationId, SHA-256 checksum",
+            "Payload: JSON-serialized visit request or status update",
+            "Correlation ID links messages across the air gap bidirectionally"
+          ]
+        },
+        {
+          "heading": "Outbox Table Schema",
+          "items": [
+            "messageType (string), correlationId (string), payload (string/JSON)",
+            "status: pending → sent → failed",
+            "attempts (number), lastAttempt (timestamp)",
+            "Index: by_status — gateway polls for status='pending'"
+          ]
+        },
+        {
+          "heading": "Delivery Guarantees",
+          "items": [
+            "At-least-once delivery with idempotency via correlationId",
+            "Inbox deduplicates by correlationId index",
+            "Failed sends retry with exponential backoff (max 3 attempts)",
+            "Delay proxy: 2s ± 1s jitter simulating physical diode latency"
+          ]
+        }
+      ],
+      "justification": [
+        "Outbox pattern: Survives process crashes — messages persist in Convex DB until confirmed sent. No data loss on restart.",
+        "XML envelopes: Required by most physical diode vendors (Advenica, Nexor, OPSWAT). JSON payload inside XML wrapper gives us both compatibility and developer ergonomics.",
+        "NATS transport: Lightweight pub/sub with no broker state — fits the constrained diode proxy model. Each direction is a separate NATS subject.",
+        "Diode-agnostic design: Each site may use a different diode product. The gateway abstraction means only the transport layer changes, not the application logic.",
+        "Correlation IDs: Enable bidirectional message tracking across the air gap without shared state between networks."
+      ],
+      "notes": "The diode gateway (packages/diode-gateway) polls every 500ms. The delay proxy (packages/diode-delay-proxy) subscribes to NATS and republishes with configurable delay. In production, these are replaced by actual diode hardware interfaces."
+    },
+    {
+      "id": "step5-verification",
+      "type": "explanation",
+      "step": 5,
+      "title": "Step 5 — RESTRICTED-Side Verification",
+      "description": "On the RESTRICTED network, Anna's request triggers automatic verification against three authoritative registers in parallel. Her identity score is 85/100 (ID-porten + passport + email), well above the 60-point threshold. FREG confirms she exists and is alive. NKR shows no clearance issues. She passes all checks.",
+      "bullets": [
+        "FREG: Anna Lindqvist — alive, resident in Norway",
+        "NKR: No security clearance required for this visit level",
+        "SAP HR: Not an employee (external visitor — expected)",
+        "Identity score: 85/100 — exceeds 60-point threshold"
+      ]
+    },
+    {
+      "id": "tech-verification-pipeline",
+      "type": "technical",
+      "title": "Register Verification Pipeline",
+      "description": "On the RESTRICTED side, each visit triggers parallel checks against 4 authoritative registers. Each register returns a result that maps to a score modifier. Blocks (deceased, emigrated) halt processing immediately. The verified score = baseScore + sum of all modifiers.",
+      "sections": [
+        {
+          "heading": "FREG (Folkeregisteret)",
+          "items": [
+            "found_alive: +15 pts",
+            "not_found: -20 pts",
+            "deceased: BLOCK (score unchanged, visit halted)",
+            "emigrated: BLOCK (score unchanged, visit halted)"
+          ]
+        },
+        {
+          "heading": "NKR (Klareringsregisteret)",
+          "items": [
+            "active_clearance: +20 pts",
+            "no_clearance: 0 pts (neutral)",
+            "revoked: -50 pts (immediate suspension if on-site)"
+          ]
+        },
+        {
+          "heading": "Brønnøysundregistrene",
+          "items": [
+            "active: +10 pts",
+            "dissolved: -15 pts",
+            "company_not_found: -10 pts"
+          ]
+        },
+        {
+          "heading": "SAP HR",
+          "items": [
+            "employee: +10 pts",
+            "not_employee: 0 pts (neutral for external visitors)"
+          ]
+        }
+      ],
+      "justification": [
+        "Parallel execution: All 4 registers checked simultaneously — reduces verification latency from ~4s sequential to ~1s parallel.",
+        "Modifiers not replacement: Register results adjust the base score rather than overriding it — preserves the value of strong initial identity verification.",
+        "Block semantics: Deceased/emigrated are absolute blockers regardless of score — no amount of other evidence can override a FREG block.",
+        "Divergence detection: If RESTRICTED verifiedScore differs from portal baseScore by >10 points, scoreDivergent flag triggers automatic security review.",
+        "Structured results: Each register result stored with register name, result type, modifier, and block flag — enables audit trail and re-scoring."
+      ],
+      "notes": "Register verification is implemented in packages/convex-restricted/convex/verification.ts. Mock registers respond from packages/mocks/registers/src/server.ts. The registerResults array on the visits table stores the full audit trail of all modifier applications."
+    },
+    {
+      "id": "step6-sponsor",
+      "type": "walkthrough",
+      "step": 6,
+      "title": "Step 6 — Sponsor Approves the Visit",
+      "story": "A",
+      "character": "sponsor",
+      "description": "Maj. Ola Hansen logs into the Sponsor Portal via Mil Feide. His dashboard shows 5 active visits, 2 pending approvals, and 3 visits today. He sees Anna's request, assigns Lt. Kari Solberg as escort, and approves. The banner alerts him to 2 visits awaiting approval.",
+      "screenshot": "screenshots/08-sponsor-approval.png",
+      "annotations": [
+        {"text": "5 active visits, 2 pending approval, 3 today at SITE-A", "position": "top-left"},
+        {"text": "Alert banner: '2 besøk venter på godkjenning'", "position": "center"},
+        {"text": "All visitors listed with type and status badges", "position": "bottom-left"}
+      ]
+    },
+    {
+      "id": "step7-guard-arrival",
+      "type": "walkthrough",
+      "step": 7,
+      "title": "Step 7 — Guard Station: Anna Arrives",
+      "story": "A",
+      "character": "guard",
+      "description": "Korp. Petter Olsen at the Guard Station sees today's expected visitors. Petter Svendsen (walk-in) and Marte Haugen (in-house) are already checked in. The guard verifies Anna's identity, confirms her escort, and checks her in. Tab badges show 2 on-site.",
+      "screenshot": "screenshots/10-guard-checkin.png",
+      "annotations": [
+        {"text": "Tab badges show 2 visitors today, 2 on-site", "position": "top-left"},
+        {"text": "Petter (walk-in) and Marte (in-house) already checked in", "position": "center"}
+      ]
+    },
+    {
+      "id": "step8-badge",
+      "type": "walkthrough",
+      "step": 8,
+      "title": "Step 8 — Badge Issuance & On-Site",
+      "story": "A",
+      "character": "guard",
+      "description": "The guard issues Anna a DESFire EV3 badge through the OnGuard integration. The system creates a visitor record, assigns a badge, and configures time-bounded access levels. The 'På stedet / On-Site' tab shows all active visitors with their escort assignments.",
+      "screenshot": "screenshots/11-badge-issuance.png",
+      "annotations": [
+        {"text": "On-Site tab shows all currently active visitors", "position": "top-left"},
+        {"text": "Each visitor has escort and check-in time visible", "position": "center"}
+      ]
+    },
+    {
+      "id": "tech-access-tiers",
+      "type": "technical",
+      "title": "Access Tier Resolution & Badge Lifecycle",
+      "description": "After verification, the system resolves the highest qualifying access tier by checking verifiedScore against tier thresholds AND hard gate conditions. Tiers are evaluated highest-first — the visitor gets the best tier they qualify for.",
+      "sections": [
+        {
+          "heading": "Access Tiers (score + hard gates)",
+          "items": [
+            "escorted_day (≥40): FREG must not be negative",
+            "escorted_recurring (≥50): FREG must be positive (found_alive)",
+            "unescorted (≥70): FREG positive + NKR no flags",
+            "high_security (≥90): FREG positive + NKR active clearance",
+            "long_term_contractor (≥100): FREG positive + NKR no flags + Brønnøysund valid"
+          ]
+        },
+        {
+          "heading": "Badge State Machine",
+          "items": [
+            "pending → issued → active → deactivated → collected",
+            "OnGuard integration: badge key, visitor ID, badge number",
+            "Time-bounded activation: activateAt / deactivateAt timestamps",
+            "Access level IDs assigned based on resolved tier"
+          ]
+        },
+        {
+          "heading": "DESFire EV3 Multi-App Model",
+          "items": [
+            "One card per person, multiple site-specific applications",
+            "Delegated PICC master key: each site manages its own app independently",
+            "Card survives inter-site travel — no re-issuance needed"
+          ]
+        }
+      ],
+      "justification": [
+        "Tiered access: Defense-in-depth — even low-trust visitors get escorted access rather than outright denial, enabling deliveries and short visits.",
+        "Hard gates: Score alone isn't sufficient — a contractor with score 100 but revoked clearance must not get unescorted access. Hard gates enforce categorical requirements.",
+        "Highest-first evaluation: Resolving from top tier downward means visitors automatically get the best access they qualify for, without manual tier selection.",
+        "DESFire multi-app: Each site operates independently — if Site A revokes a card app, Site B's app remains unaffected. No central card management dependency.",
+        "Badge lifecycle: Separate from visit lifecycle — badges can be pre-issued before arrival and auto-deactivated on check-out or timeout."
+      ],
+      "notes": "Access tier resolution is in packages/shared/src/identity-scoring.ts (resolveAccessTier). Badge management integrates with OnGuard via packages/convex-restricted/convex/visits.ts. The DESFire multi-app architecture is detailed in docs/plan/04-access-control.md."
+    },
+    {
+      "id": "step9-checkout",
+      "type": "walkthrough",
+      "step": 9,
+      "title": "Step 9 — Check-Out & Badge Deactivation",
+      "story": "A",
+      "character": "anna",
+      "description": "After her meeting, Anna returns to reception. The guard processes check-out — the badge is automatically deactivated via the OnGuard API. An audit log records the complete visit. Anna's story is complete: a smooth, end-to-end visitor lifecycle.",
+      "screenshot": "screenshots/13-checkout.png",
+      "annotations": [
+        {"text": "Check-Out tab for processing departing visitors", "position": "top-left"},
+        {"text": "Badge deactivated automatically on check-out", "position": "center-right"}
+      ]
+    },
+    {
+      "id": "story-b-intro",
+      "type": "story-break",
+      "title": "Story B — The Flagged Visitor",
+      "story": "B",
+      "character": "thomas",
+      "description": "Thomas Müller from Rheinmetall Defence (Germany) needs to attend a weapons integration test at SITE-A. His identity score is only 45/100 — below the 60-point threshold. He has a passport but no Norwegian eID and no clearance record in NKR.",
+      "outcome": "FLAGGED FOR SECURITY OFFICER REVIEW"
+    },
+    {
+      "id": "step10-security-flagged",
+      "type": "walkthrough",
+      "step": 10,
+      "title": "Step 10 — Security Officer: Flagged Visit",
+      "story": "B",
+      "character": "security",
+      "description": "Kapt. Eva Berg sees Thomas Müller in her Approval Queue with 'FLAGGET' status. His identity score of 45 is highlighted in orange — below threshold. She can see his company (Rheinmetall), purpose, sponsor (Oblt. Per Dahl), and the flagging reason.",
+      "screenshot": "screenshots/09-security-review.png",
+      "annotations": [
+        {"text": "1 pending in queue, 1 active alert", "position": "top-left"},
+        {"text": "Thomas Müller: score 45, FLAGGET, priority Medium", "position": "center"},
+        {"text": "Full details: company, purpose, sponsor visible", "position": "bottom-left"}
+      ]
+    },
+    {
+      "id": "story-c-intro",
+      "type": "story-break",
+      "title": "Story C — The Walk-In",
+      "story": "C",
+      "character": "petter",
+      "description": "Petter Svendsen from NorLog Levering AS arrives unannounced at SITE-A reception with a delivery of spare parts (PO-2026-0412). He has no pre-registration. The guard contacts Sgt. Erik Nordby by phone for verbal approval and registers Petter directly.",
+      "outcome": "WALK-IN: CHECKED IN WITH ESCORTED-ONLY ACCESS"
+    },
+    {
+      "id": "story-d-intro",
+      "type": "story-break",
+      "title": "Story D — The Denied Visitor",
+      "story": "D",
+      "character": "ivan",
+      "description": "Ivan Petrov from Unknown Technologies LLC submits a visit request for a 'business proposition'. His identity score is only 30. FREG cannot find him. Brønnøysundregistrene returns no match for his company. Kapt. Eva Berg reviews and denies the visit.",
+      "outcome": "DENIED — Identity unverifiable, company does not exist"
+    },
+    {
+      "id": "step11-audit",
+      "type": "walkthrough",
+      "step": 11,
+      "title": "Step 11 — Audit Trail: All Stories Recorded",
+      "description": "Every action across all storylines is recorded in the Security Officer's Audit Trail. Diode messages, state transitions, verification results, and badge operations form a complete forensic record for NSM and NIST CSF 2.0 compliance.",
+      "screenshot": "screenshots/14-security-audit.png",
+      "annotations": [
+        {"text": "Complete audit trail accessible to security officers", "position": "top-left"},
+        {"text": "All diode messages and state transitions logged", "position": "center"}
+      ]
+    },
+    {
+      "id": "step12-management",
+      "type": "walkthrough",
+      "step": 12,
+      "title": "Step 12 — Operations Dashboard",
+      "description": "The management dashboard shows a bird's-eye view across both network segments. With all stories running: 9 services (8 up, 1 down), 2ms average response time, and diode message flow in both directions.",
+      "screenshot": "screenshots/15-management-overview.png",
+      "annotations": [
+        {"text": "8 of 9 services healthy, real-time latency monitoring", "position": "top-left"},
+        {"text": "Diode message pipeline visible at bottom", "position": "center-right"}
+      ]
+    },
+    {
+      "id": "closing",
+      "type": "closing",
+      "title": "Summary: Four Storylines, One System",
+      "bullets": [
+        "Story A (Anna): Complete happy-path — registration to check-out",
+        "Story B (Thomas): Foreign contractor flagged — score below threshold",
+        "Story C (Petter): Walk-in delivery — guard registers on-the-spot",
+        "Story D (Ivan): Denied — unverifiable identity, non-existent company",
+        "5 user-facing applications serving distinct roles across the air gap",
+        "Full audit trail for NSM + NIST CSF 2.0 compliance",
+        "Mock infrastructure enables end-to-end demonstration",
+        "Story E (Cross-Site): Marte permanent dual-site, Anna time-bounded, Thomas denied, classified overlay"
+      ],
+      "notes": "This walkthrough demonstrates the mock implementation with realistic data. The production system will use real Convex backends, actual data diodes, hardware badge encoders, and integration with live Norwegian government registers."
+    },
+
+    {
+      "id": "story-e-intro",
+      "type": "story-break",
+      "title": "Story E — Cross-Site Access",
+      "character": "marte",
+      "description": "Marte Haugen has permanent access at both Site A and Site B. Anna Lindqvist needs occasional time-bounded access to Site B. Thomas Müller requests Site B access but is denied due to his flagged status. One card, multiple sites — the DESFire multi-app model in action.",
+      "outcome": "ONE CARD, MULTIPLE SITES — CROSS-SITE ACCESS MANAGEMENT"
+    },
+    {
+      "id": "step-e1-marte-dual",
+      "type": "walkthrough",
+      "story": "E",
+      "step": 13,
+      "character": "marte",
+      "title": "Step 13 — Marte: Permanent Dual-Site Access",
+      "description": "Marte Haugen (FD internal) arrives at Site B. Her DESFire card already has App 01 (Site A) and App 02 (Site B) encoded permanently. She taps the reader at Site B's entrance — the reader finds App 02, checks OnGuard access levels, and grants entry. No re-encoding needed.",
+      "annotations": [
+        {"text": "Card has both App 01 and App 02 — permanent", "position": "top-right"},
+        {"text": "Site B reader reads App 02 only, ignores App 01", "position": "bottom-right"}
+      ]
+    },
+    {
+      "id": "step-e2-anna-siteB",
+      "type": "walkthrough",
+      "story": "E",
+      "step": 14,
+      "character": "anna",
+      "title": "Step 14 — Anna: Time-Bounded Site B Visit",
+      "description": "Anna Lindqvist is approved for an occasional visit to Site B. At arrival, the Site B guard encodes App 02 onto her existing card (which already has App 01 from Site A). The app is time-bounded: 08:00-18:00 today. Anna can now tap into any standard area at Site B.",
+      "annotations": [
+        {"text": "App 02 written onto existing card at Site B reception", "position": "top-right"},
+        {"text": "Time-bounded: activates 08:00, deactivates 18:00", "position": "bottom-right"}
+      ]
+    },
+    {
+      "id": "step-e3-thomas-denied",
+      "type": "walkthrough",
+      "story": "E",
+      "step": 15,
+      "character": "thomas",
+      "title": "Step 15 — Thomas: Site B Access Denied",
+      "description": "Thomas Müller requests access to Site B for a follow-up integration test. The request crosses the diode to Site B's RESTRICTED side. Verification fails: his flagged status from Site A is visible, identity score remains 45 (below threshold), and NKR shows no clearance. Site B denies the request — no App 02 is ever written to his card.",
+      "annotations": [
+        {"text": "Flagged status from Site A propagates via diode", "position": "top-right"},
+        {"text": "Score 45 < threshold 60 — denied at Site B", "position": "bottom-right"}
+      ]
+    },
+    {
+      "id": "step-e4-marte-classified",
+      "type": "walkthrough",
+      "story": "E",
+      "step": 16,
+      "character": "marte",
+      "title": "Step 16 — Marte: Classified Zone Authorization",
+      "description": "Marte needs access to the SCIF at Site B. Kapt. Eva Berg verifies her NKR active clearance and approves classified zone access. The guard encodes App 10 (classified overlay) onto her card and reprints it with a red stripe and red holographic overlay. Marte's card now has App 01 + App 02 + App 10. The SCIF reader requires both App 02 AND App 10 (dual-app authentication).",
+      "annotations": [
+        {"text": "App 10 encoded — separate key hierarchy from site apps", "position": "top-right"},
+        {"text": "Card reprinted: red stripe + red hologram for manual fallback", "position": "bottom-right"}
+      ]
+    },
+    {
+      "id": "step-e5-anna-checkout-siteB",
+      "type": "walkthrough",
+      "story": "E",
+      "step": 17,
+      "character": "anna",
+      "title": "Step 17 — Anna: Site B Checkout",
+      "description": "Anna's meeting at Site B concludes. The guard processes checkout — App 02 is wiped from her card, OnGuard deactivates the badge. App 01 (Site A) remains untouched. Anna leaves with her card still valid for Site A. The audit trail records the complete cross-site visit lifecycle.",
+      "annotations": [
+        {"text": "App 02 wiped — Site B access removed", "position": "top-right"},
+        {"text": "App 01 unchanged — Site A access preserved", "position": "bottom-right"}
+      ]
+    },
+    {
+      "id": "tech-card-architecture",
+      "type": "technical",
+      "title": "DESFire EV3 Multi-App Card Layout",
+      "description": "One card holds multiple DESFire applications. Site apps (01, 02) handle standard access. Overlay apps (10, 11) handle special areas. Each app has independent AES-128 keys — compromising one never exposes another.",
+      "sections": [
+        {
+          "heading": "Site Applications (App 01, 02, ...)",
+          "items": [
+            "One app per site, site-specific AES-128 keys",
+            "Reader reads only its own site's app",
+            "Permanent or time-bounded per access pattern"
+          ]
+        },
+        {
+          "heading": "Overlay Applications",
+          "items": [
+            "App 10: Classified zones (Central Security Authority keys)",
+            "App 11: High-value zones (Site Facility Manager keys)",
+            "Dual-app auth: site app + overlay required at special doors"
+          ]
+        },
+        {
+          "heading": "Pool-Issued Cards",
+          "items": [
+            "Blank DESFire cards from site pool for contractors, family, retired",
+            "Card accumulates apps across sites, wiped on return",
+            "Tracked: serial, issued-to, encoded apps, return date"
+          ]
+        }
+      ],
+      "justification": [
+        "Site independence: each site manages own keys, no cross-site dependency",
+        "Cryptographic isolation: classified zone keys completely separate from standard access",
+        "DESFire EV3 supports 28 apps — 4-5 apps per card is well within limits",
+        "Pool cards follow same multi-app model as employee cards"
+      ]
+    },
+    {
+      "id": "tech-visual-indicator",
+      "type": "technical",
+      "title": "Visual Indicators — Manual Fallback Design",
+      "description": "When electronic access fails (power outage, emergency rush), guards need a visual way to verify special area authorization. A two-layer approach: color stripe for instant recognition, holographic overlay for forge resistance.",
+      "sections": [
+        {
+          "heading": "Color Stripe (instant, 2m recognition)",
+          "items": [
+            "No stripe = standard access only",
+            "Red stripe = classified zone (App 10)",
+            "Blue stripe = high-value zone (App 11)"
+          ]
+        },
+        {
+          "heading": "Holographic Overlay (forge-resistant)",
+          "items": [
+            "Color-matched hologram confirms stripe authenticity",
+            "Requires inspection — used when there's time",
+            "Red+Blue dual hologram for both overlays (rare)"
+          ]
+        },
+        {
+          "heading": "Operational Fallback",
+          "items": [
+            "Rush: guard glances stripe, allows entry, logs manually",
+            "Power outage: stripe check + hologram inspection + photo/name",
+            "Card reprinted when overlay apps added after initial issue"
+          ]
+        }
+      ],
+      "justification": [
+        "Stripe handles rush scenario — recognition at arm's length",
+        "Hologram handles skeptical-guard scenario — tamper-evident verification",
+        "1:1 mapping: stripe color = overlay app = zone type — no ambiguity",
+        "Combo scores highest on both instant-recognition AND forge-resistance"
+      ]
+    },
+
+    {
+      "id": "appendix-break",
+      "type": "section-break",
+      "title": "Part 2: Technical Reference",
+      "subtitle": "Requirements, Data Models, State Machines, Design Decisions",
+      "notes": "The following appendix slides provide technical depth for developers and architects. Each section references back to the scenario steps where the concepts were demonstrated."
+    },
+
+    {
+      "id": "appendix-requirements-1",
+      "type": "requirements",
+      "title": "Capability Requirements — Identity & Access",
+      "requirements": [
+        { "domain": "Identity", "capability": "All visitors must authenticate via ID-porten (external) or Mil Feide (internal) before registration", "priority": "MUST", "ref": "Step 1, Story A" },
+        { "domain": "Identity", "capability": "Identity score must be computed from ≥1 verified source across ≥2 categories", "priority": "MUST", "ref": "Step 3, T1" },
+        { "domain": "Identity", "capability": "RESTRICTED side must independently recalculate identity score (no trust of portal score)", "priority": "MUST", "ref": "Step 5, T3" },
+        { "domain": "Identity", "capability": "Score divergence >10 pts between portal and RESTRICTED should trigger automatic flag", "priority": "SHOULD", "ref": "T3 justification" },
+        { "domain": "Access Control", "capability": "All access decisions must be made exclusively on the RESTRICTED side", "priority": "MUST", "ref": "Architecture slide" },
+        { "domain": "Access Control", "capability": "Access tiers must enforce both score thresholds AND hard gate conditions", "priority": "MUST", "ref": "T4, Step 10" },
+        { "domain": "Access Control", "capability": "Walk-in visitors should receive escorted_day access with guard-initiated registration", "priority": "SHOULD", "ref": "Story C" },
+        { "domain": "Access Control", "capability": "Visitors failing all register checks must be denied with audit record", "priority": "MUST", "ref": "Story D" },
+        { "domain": "Access Control", "capability": "Revoked NKR clearance should trigger immediate on-site suspension", "priority": "MUST", "ref": "T3 NKR section" },
+        { "domain": "Verification", "capability": "Register checks (FREG, NKR, Brønnøysund, SAP HR) must run in parallel", "priority": "SHOULD", "ref": "T3" },
+        { "domain": "Verification", "capability": "Deceased/emigrated FREG results must block visit regardless of score", "priority": "MUST", "ref": "T3 FREG section" },
+        { "domain": "Verification", "capability": "Foreign nationals without Norwegian eID may compensate with additional documentation", "priority": "MAY", "ref": "Story B" }
+      ],
+      "notes": "These capability requirements are derived from the system architecture documents (docs/plan/03-identity-verification.md and 04-access-control.md) and validated against the demonstrated scenarios."
+    },
+
+    {
+      "id": "appendix-requirements-2",
+      "type": "requirements",
+      "title": "Capability Requirements — Diode, Physical & Audit",
+      "requirements": [
+        { "domain": "Diode", "capability": "Messages must cross air gap via outbox/inbox pattern with at-least-once delivery", "priority": "MUST", "ref": "Step 4, T2" },
+        { "domain": "Diode", "capability": "All diode messages must carry SHA-256 integrity checksums", "priority": "MUST", "ref": "T2" },
+        { "domain": "Diode", "capability": "Gateway must be diode-vendor agnostic (support multiple products per site)", "priority": "MUST", "ref": "T2 justification" },
+        { "domain": "Diode", "capability": "Failed sends should retry with exponential backoff (max 3 attempts)", "priority": "SHOULD", "ref": "T2" },
+        { "domain": "Physical", "capability": "Badges must be time-bounded with automatic deactivation on check-out or timeout", "priority": "MUST", "ref": "Step 9, T4" },
+        { "domain": "Physical", "capability": "DESFire multi-app model must allow independent site-level card management", "priority": "MUST", "ref": "T4 DESFire section" },
+        { "domain": "Physical", "capability": "Escort assignments must track acceptance, delegation, and timeout states", "priority": "SHOULD", "ref": "Step 7-8" },
+        { "domain": "Audit", "capability": "All state transitions, diode messages, and verification results must be logged", "priority": "MUST", "ref": "Step 11" },
+        { "domain": "Audit", "capability": "Audit trail must satisfy NSM and NIST CSF 2.0 requirements", "priority": "MUST", "ref": "Step 11" },
+        { "domain": "Audit", "capability": "No fødselsnummer or clearance data may be stored on UNCLASSIFIED side", "priority": "MUST", "ref": "Data minimization" },
+        { "domain": "Audit", "capability": "Separate Splunk instances per classification level for log segregation", "priority": "SHOULD", "ref": "Architecture" }
+      ],
+      "notes": "Physical security requirements reference docs/plan/04-access-control.md. Audit requirements reference docs/plan/08-audit-compliance.md. Data minimization is a core GDPR compliance measure."
+    },
+
+    {
+      "id": "appendix-schema-restricted-visits",
+      "type": "schema",
+      "title": "Data Model — RESTRICTED: visits (Core Entity)",
+      "tables": [
+        {
+          "name": "visits — Identity & Visit Info",
+          "fields": [
+            { "name": "status", "type": "string", "note": "State machine" },
+            { "name": "visitorType", "type": "string", "note": "" },
+            { "name": "firstName / lastName", "type": "string", "note": "Required" },
+            { "name": "email / phone", "type": "string?", "note": "Optional" },
+            { "name": "companyName", "type": "string?", "note": "" },
+            { "name": "purpose", "type": "string", "note": "Required" },
+            { "name": "siteId", "type": "string", "note": "Site ref" },
+            { "name": "dateFrom / dateTo", "type": "string", "note": "ISO date" },
+            { "name": "sponsorEmployeeId", "type": "string?", "note": "Sponsor ref" },
+            { "name": "sponsorName", "type": "string?", "note": "" }
+          ],
+          "indexes": ["by_status", "by_site_date", "by_site_status", "by_correlation"]
+        },
+        {
+          "name": "visits — Scoring & Verification",
+          "fields": [
+            { "name": "identityScore", "type": "number", "note": "Portal score" },
+            { "name": "identitySources", "type": "string[]", "note": "Source IDs" },
+            { "name": "baseScore", "type": "number?", "note": "Stage 1" },
+            { "name": "verifiedScore", "type": "number?", "note": "Stage 2" },
+            { "name": "accessTier", "type": "TierId | null", "note": "Stage 3" },
+            { "name": "flagReasons", "type": "string[]?", "note": "Auto-flags" },
+            { "name": "registerResults", "type": "object[]?", "note": "Modifier audit" },
+            { "name": "scoreDivergent", "type": "boolean?", "note": ">10pt diff" },
+            { "name": "approvalTier", "type": "string", "note": "Approval level" },
+            { "name": "badgeId / accessLevelIds", "type": "string? / string[]?", "note": "OnGuard" },
+            { "name": "diodeCorrelationId", "type": "string", "note": "Cross-gap link" },
+            { "name": "checkedInAt / checkedOutAt", "type": "number?", "note": "Timestamps" }
+          ]
+        }
+      ],
+      "notes": "The visits table is the core entity on RESTRICTED — split here into two logical groups for readability. registerResults stores [{register, result, modifier, block?}] enabling re-scoring and forensic review. Four indexes support common query patterns: by status, by site+date, by site+status, and by diode correlation ID."
+    },
+
+    {
+      "id": "appendix-schema-restricted-supporting",
+      "type": "schema",
+      "title": "Data Model — RESTRICTED: Supporting Tables",
+      "tables": [
+        {
+          "name": "verifications",
+          "fields": [
+            { "name": "visitId", "type": "id(visits)", "note": "FK" },
+            { "name": "source", "type": "string", "note": "freg/nkr/sap" },
+            { "name": "status", "type": "string", "note": "Result" },
+            { "name": "details", "type": "string?", "note": "Detail text" },
+            { "name": "checkedAt", "type": "number", "note": "Timestamp" }
+          ],
+          "indexes": ["by_visit"]
+        },
+        {
+          "name": "escorts",
+          "fields": [
+            { "name": "visitId", "type": "id(visits)", "note": "FK" },
+            { "name": "employeeId / Name", "type": "string", "note": "Employee" },
+            { "name": "status", "type": "enum", "note": "6 states" },
+            { "name": "delegatedTo", "type": "string?", "note": "Delegate ID" },
+            { "name": "notified/responded/timeoutAt", "type": "number?", "note": "Timestamps" }
+          ],
+          "indexes": ["by_visit", "by_employee"]
+        },
+        {
+          "name": "badges",
+          "fields": [
+            { "name": "visitId", "type": "id(visits)", "note": "FK" },
+            { "name": "onguardBadgeKey", "type": "number?", "note": "OnGuard PK" },
+            { "name": "badgeNumber", "type": "string?", "note": "Physical ID" },
+            { "name": "status", "type": "enum", "note": "5 states" },
+            { "name": "accessLevelIds", "type": "string[]", "note": "Zone access" },
+            { "name": "activate/deactivateAt", "type": "number?", "note": "Time-bound" }
+          ],
+          "indexes": ["by_visit"]
+        }
+      ],
+      "summary": [
+        "diodeInbox: messageType, correlationId, payload, processedAt — receives from UNCLASSIFIED (idx: by_correlation, by_processed)",
+        "diodeOutbox: messageType, correlationId, payload, status, attempts — sends to UNCLASSIFIED (idx: by_status)",
+        "accessLevels: onguardId, name, zones[], requiredScoreTier — synced from OnGuard (idx: by_name)"
+      ],
+      "notes": "Escort status enum: assigned → notified → accepted/delegated/declined/timed_out. Badge status enum: pending → issued → active → deactivated → collected. All infrastructure tables follow the same outbox/inbox pattern on both sides."
+    },
+
+    {
+      "id": "appendix-schema-unclass",
+      "type": "schema",
+      "title": "Data Model — UNCLASSIFIED Side",
+      "tables": [
+        {
+          "name": "visitRequests",
+          "fields": [
+            { "name": "visitorType", "type": "enum", "note": "external/in_house/contractor" },
+            { "name": "firstName / lastName", "type": "string", "note": "Required" },
+            { "name": "email / phone", "type": "string?", "note": "Optional" },
+            { "name": "companyName", "type": "string?", "note": "" },
+            { "name": "companyOrgNumber", "type": "string?", "note": "Brønnøysund ref" },
+            { "name": "purpose", "type": "string", "note": "Required" },
+            { "name": "siteId", "type": "string", "note": "Target site" },
+            { "name": "dateFrom / dateTo", "type": "string", "note": "ISO date" },
+            { "name": "identityScore", "type": "number", "note": "Portal-computed" },
+            { "name": "identitySources", "type": "string[]", "note": "Source IDs" },
+            { "name": "status", "type": "string", "note": "Simplified status" },
+            { "name": "diodeMessageId", "type": "string?", "note": "Correlation ID" },
+            { "name": "batchId", "type": "string?", "note": "Contractor bulk" },
+            { "name": "createdBy", "type": "string", "note": "Auth user ID" }
+          ],
+          "indexes": ["by_status", "by_sponsor", "by_site_date", "by_diode_message", "by_batch"]
+        },
+        {
+          "name": "sponsorActions",
+          "fields": [
+            { "name": "visitRequestId", "type": "id(visitRequests)", "note": "FK" },
+            { "name": "action", "type": "enum", "note": "approved/denied/escort_assigned" },
+            { "name": "sponsorId", "type": "string", "note": "Employee ref" },
+            { "name": "escortEmployeeId", "type": "string?", "note": "Escort ref" },
+            { "name": "notes", "type": "string?", "note": "Free text" }
+          ],
+          "indexes": ["by_visit"]
+        }
+      ],
+      "summary": [
+        "companyCache: orgNumber, name, organizationType, status, fetchedAt — cached Brønnøysund lookups (index: by_org)",
+        "courseCompletions: visitorId, completedAt — tracks security course completion for repeat visitors (index: by_visitor)",
+        "diodeOutbox/diodeInbox: same outbox/inbox pattern as RESTRICTED side — handles bidirectional message flow"
+      ],
+      "notes": "Critical data minimization: NO fødselsnummer, NO clearance data, NO FREG results on the UNCLASSIFIED side. The identityScore is computed from portal-available sources only. The RESTRICTED side recalculates independently and never trusts this value."
+    },
+
+    {
+      "id": "appendix-state-machines",
+      "type": "state-machine",
+      "title": "State Machines — Visit, Escort & Badge Lifecycles",
+      "machines": [
+        {
+          "label": "Visit Lifecycle",
+          "main": true,
+          "states": [
+            { "name": "received" },
+            { "name": "verifying" },
+            { "name": "verified" },
+            { "name": "flagged_\nfor_review", "branch": true },
+            { "name": "approved" },
+            { "name": "day_of_\ncheck" },
+            { "name": "ready_for_\narrival" },
+            { "name": "checked_in" },
+            { "name": "checked_out", "terminal": true }
+          ],
+          "branches": [
+            { "label": "denied (terminal) — branches from flagged_for_review or verifying", "x": 2.8 },
+            { "label": "cancelled (terminal) — can branch from any pre-arrival state", "x": 6.5 }
+          ]
+        },
+        {
+          "label": "Escort States",
+          "main": false,
+          "states": [
+            { "name": "assigned" },
+            { "name": "notified" },
+            { "name": "accepted", "terminal": true },
+            { "name": "delegated", "terminal": true },
+            { "name": "declined", "terminal": true },
+            { "name": "timed_out", "terminal": true }
+          ]
+        },
+        {
+          "label": "Badge States",
+          "main": false,
+          "states": [
+            { "name": "pending" },
+            { "name": "issued" },
+            { "name": "active" },
+            { "name": "deactivated" },
+            { "name": "collected", "terminal": true }
+          ]
+        }
+      ],
+      "notes": "The visit lifecycle is the primary state machine managed by convex-restricted/convex/visits.ts. Key transitions: received→verifying triggers register checks, flagged_for_review requires manual security officer action, approved→day_of_check is a scheduled transition on visit date. Escort and badge machines run in parallel, linked by visitId."
+    },
+
+    {
+      "id": "appendix-decisions-1",
+      "type": "decision-log",
+      "title": "Design Decisions — Architecture & Security",
+      "decisions": [
+        {
+          "decision": "RESTRICTED as sole authority",
+          "options": "A) Distributed decisions across both sides, B) RESTRICTED-only authority, C) UNCLASSIFIED pre-screening + RESTRICTED final",
+          "chosen": "B) RESTRICTED-only",
+          "rationale": "Eliminates attack surface on UNCLASSIFIED. If unclass side is compromised, attacker cannot approve visitors. Matches NSM guidance for classified environments."
+        },
+        {
+          "decision": "100-point identity scoring",
+          "options": "A) Binary pass/fail, B) 3-tier (low/med/high), C) 100-point continuous scale",
+          "chosen": "C) 100-point scale",
+          "rationale": "Enables 5 access tiers with different score thresholds. Modular — adding new identity sources doesn't require rethinking the model. Proven at national scale (Australia)."
+        },
+        {
+          "decision": "Data minimization on UNCLASSIFIED",
+          "options": "A) Full data on both sides, B) Minimal on unclass, C) No personal data on unclass",
+          "chosen": "B) Minimal on unclass",
+          "rationale": "GDPR compliance + defense-in-depth. No fødselsnummer or clearance data on UNCLASSIFIED. If unclass DB is breached, exposure is limited to names, emails, and visit purposes."
+        },
+        {
+          "decision": "Outbox/inbox diode pattern",
+          "options": "A) Direct API calls through proxy, B) Shared message queue, C) Outbox table + polling gateway",
+          "chosen": "C) Outbox + polling",
+          "rationale": "Survives crashes (messages persist in DB). Auditable (every message logged). Works with any transport — NATS today, physical diode tomorrow. No shared state between networks."
+        },
+        {
+          "decision": "Diode-agnostic gateway",
+          "options": "A) Vendor-specific integration per site, B) Abstracted gateway interface",
+          "chosen": "B) Abstracted gateway",
+          "rationale": "Each site may use different diode hardware (Advenica, Nexor, OPSWAT). Gateway abstraction means application logic is identical — only transport adapter changes per site."
+        }
+      ],
+      "notes": "These decisions are documented in detail in docs/plan/00-overview.md through 12-mock-infrastructure.md. Each was evaluated against NSM security requirements and NIST CSF 2.0 framework controls."
+    },
+
+    {
+      "id": "appendix-decisions-2",
+      "type": "decision-log",
+      "title": "Design Decisions — Technology & Operations",
+      "decisions": [
+        {
+          "decision": "DESFire EV3 multi-app cards",
+          "options": "A) Single-app per card (one card per site), B) Multi-app per card (one card per person)",
+          "chosen": "B) Multi-app",
+          "rationale": "Visitors travelling between sites keep one card. Delegated PICC master key means each site manages its own app. No central card management dependency. Site independence maintained."
+        },
+        {
+          "decision": "Convex reactive backend",
+          "options": "A) REST + polling, B) GraphQL subscriptions, C) Convex reactive queries",
+          "chosen": "C) Convex reactive",
+          "rationale": "Real-time updates critical for guard station (new arrivals) and security officer (new flags). Convex provides reactive queries with zero boilerplate. TypeScript end-to-end with type-safe schema."
+        },
+        {
+          "decision": "XML diode envelopes",
+          "options": "A) JSON only, B) XML envelope + JSON payload, C) Protocol Buffers",
+          "chosen": "B) XML + JSON",
+          "rationale": "Most physical diode products expect XML. JSON payload inside gives developer ergonomics. SHA-256 checksum in XML header enables integrity verification at transport layer."
+        },
+        {
+          "decision": "Mock-first development",
+          "options": "A) Build against production APIs, B) Mocks for all external systems, C) Partial mocks",
+          "chosen": "B) Full mocks",
+          "rationale": "Enables complete lifecycle demo on single machine. Validates architecture before production integration. Mocks double as test harness. Production APIs unavailable during initial development."
+        },
+        {
+          "decision": "TypeScript monorepo",
+          "options": "A) Polyglot (Python backend, TS frontend), B) TypeScript end-to-end, C) Go backend",
+          "chosen": "B) TypeScript E2E",
+          "rationale": "Shared types between frontend and backend eliminate serialization bugs. Convex requires TypeScript. Single language reduces team cognitive load and enables shared packages."
+        }
+      ],
+      "notes": "Technology decisions prioritize developer velocity and correctness over raw performance. The defense context demands auditability and correctness; the mock-first approach de-risks integration before committing to production dependencies."
+    },
+
+    {
+      "id": "appendix-compliance",
+      "type": "compliance",
+      "title": "Compliance Mapping — NSM, NIST CSF 2.0, GDPR",
+      "mappings": [
+        { "source": "Sikkerhetsloven §6-6", "requirement": "Physical access control with identity verification for classified areas", "addressed": "100-point identity scoring + tiered access + DESFire badge + escort tracking" },
+        { "source": "NSM Grunnsikring", "requirement": "Visitor management with pre-registration, approval, and logging", "addressed": "Multi-step workflow: portal → sponsor → verification → guard → audit trail" },
+        { "source": "NIST CSF PR.AC-1", "requirement": "Identities and credentials issued, managed, revoked for authorized devices/users", "addressed": "Badge lifecycle (issue → activate → deactivate → collect) via OnGuard integration" },
+        { "source": "NIST CSF PR.AC-2", "requirement": "Physical access to assets managed and protected", "addressed": "Time-bounded badges, access level IDs, zone-based DESFire apps, escort requirements" },
+        { "source": "NIST CSF DE.CM-7", "requirement": "Monitoring for unauthorized personnel, connections, devices", "addressed": "Real-time guard dashboard, on-site visitor tracking, automatic badge deactivation on timeout" },
+        { "source": "NIST CSF RS.AN-1", "requirement": "Notifications from detection systems investigated", "addressed": "Security officer UI: flagged visitors, divergent scores, revoked clearances → immediate alert" },
+        { "source": "GDPR Art. 5(1)(c)", "requirement": "Data minimization — adequate, relevant, limited to purpose", "addressed": "No fødselsnummer on UNCLASSIFIED. No clearance data outside RESTRICTED. Minimal PII in portal." },
+        { "source": "GDPR Art. 25", "requirement": "Data protection by design and default", "addressed": "Classification-separated databases. Diode prevents data leakage. Outbox pattern provides audit trail." },
+        { "source": "ISO 27001 A.7.2", "requirement": "Physical entry controls for secure areas", "addressed": "Guard check-in workflow, badge issuance, escort assignment, check-out with badge collection" },
+        { "source": "ISO 27001 A.7.4", "requirement": "Physical security monitoring of premises", "addressed": "Management dashboard: service health, diode message flow, visitor counts, on-site tracking" }
+      ],
+      "notes": "This compliance mapping covers the primary frameworks referenced in the system architecture. Full compliance assessment requires formal accreditation review (planned for Week 10 per project timeline). ISO 27001 Annex A is used as a supplementary checklist per docs/plan/08-audit-compliance.md."
+    }
+  ]
+}

@@ -119,6 +119,82 @@ export const approveVisit = mutation({
   },
 });
 
+/** List all visits belonging to a contractor bulk-submission batch. */
+export const listByBatch = query({
+  args: { batchId: v.string() },
+  handler: async (ctx, args) => {
+    return ctx.db
+      .query("visitRequests")
+      .withIndex("by_batch", (q: any) => q.eq("batchId", args.batchId))
+      .collect();
+  },
+});
+
+/** Submit multiple visit requests in a single contractor batch. */
+export const bulkSubmitVisitRequests = mutation({
+  args: {
+    workers: v.array(
+      v.object({
+        firstName: v.string(),
+        lastName: v.string(),
+        email: v.optional(v.string()),
+        phone: v.optional(v.string()),
+      }),
+    ),
+    companyName: v.string(),
+    companyOrgNumber: v.optional(v.string()),
+    purpose: v.string(),
+    siteId: v.string(),
+    dateFrom: v.string(),
+    dateTo: v.string(),
+    contractorAdminId: v.string(),
+    contractorAdminName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const batchId = crypto.randomUUID();
+    const visitIds: string[] = [];
+
+    for (const worker of args.workers) {
+      const correlationId = crypto.randomUUID();
+      const visitData = {
+        visitorType: "contractor" as const,
+        firstName: worker.firstName,
+        lastName: worker.lastName,
+        email: worker.email,
+        phone: worker.phone,
+        companyName: args.companyName,
+        companyOrgNumber: args.companyOrgNumber,
+        purpose: args.purpose,
+        siteId: args.siteId,
+        dateFrom: args.dateFrom,
+        dateTo: args.dateTo,
+        identityScore: 0,
+        identitySources: [],
+      };
+
+      const visitId = await ctx.db.insert("visitRequests", {
+        ...visitData,
+        status: "submitted",
+        diodeMessageId: correlationId,
+        batchId,
+        createdBy: args.contractorAdminId,
+      });
+
+      await ctx.db.insert("diodeOutbox", {
+        messageType: "VISITOR_REQUEST",
+        correlationId,
+        payload: JSON.stringify({ requestId: visitId, ...visitData }),
+        status: "pending",
+        attempts: 0,
+      });
+
+      visitIds.push(visitId);
+    }
+
+    return { batchId, count: visitIds.length, visitIds };
+  },
+});
+
 /** Cancel a visit request. */
 export const cancelVisit = mutation({
   args: {

@@ -155,9 +155,167 @@ app.get("/brreg/enhetsregisteret/api/enheter/:orgNumber", (c) => {
   return c.json(company);
 });
 
+// ── NAR (Nasjonalt Autorisasjonsregister) ─────────────────────────────
+
+interface NarPhysicalAuth {
+  authorizationId: string;
+  personId: string;
+  siteId: string;
+  scope: {
+    scopeId: string;
+    scopeType: "zone" | "area" | "room" | "group" | "project";
+    displayName: string;
+    classification: string;
+  };
+  constraints: {
+    escortRequired: boolean;
+    timeWindows?: { days?: string; from?: string; to?: string }[];
+    maxClassification: string;
+  };
+  validity:
+    | { type: "single-day"; date: string }
+    | { type: "period"; from: string; to: string }
+    | { type: "permanent" };
+  status: "active" | "expired" | "revoked";
+}
+
+// Today's date for single-day authorizations
+const today = new Date().toISOString().slice(0, 10);
+
+const narAuthorizations: Record<string, NarPhysicalAuth[]> = {
+  // Ola — active, Building 4 zone, permanent, no escort, KONFIDENSIELT
+  "01019012345": [
+    {
+      authorizationId: "NAR-AUTH-001",
+      personId: "01019012345",
+      siteId: "SITE-A",
+      scope: { scopeId: "SCOPE-BLDG4", scopeType: "zone", displayName: "Building 4", classification: "KONFIDENSIELT" },
+      constraints: { escortRequired: false, maxClassification: "KONFIDENSIELT" },
+      validity: { type: "permanent" },
+      status: "active",
+    },
+  ],
+  // Kari — active, Project Falcon (spans Bldg 4 + Bldg 7), period until 2027-01, no escort, HEMMELIG
+  "02028023456": [
+    {
+      authorizationId: "NAR-AUTH-002",
+      personId: "02028023456",
+      siteId: "SITE-A",
+      scope: { scopeId: "SCOPE-FALCON", scopeType: "project", displayName: "Project Falcon", classification: "HEMMELIG" },
+      constraints: { escortRequired: false, timeWindows: [{ days: "mon-fri", from: "07:00", to: "17:00" }], maxClassification: "HEMMELIG" },
+      validity: { type: "period", from: "2025-01-01", to: "2027-01-31" },
+      status: "active",
+    },
+  ],
+  // Ingrid — active, full site access, permanent, no escort, HEMMELIG
+  "04047045678": [
+    {
+      authorizationId: "NAR-AUTH-003",
+      personId: "04047045678",
+      siteId: "SITE-A",
+      scope: { scopeId: "SCOPE-SITE-A", scopeType: "area", displayName: "Full Site Access", classification: "HEMMELIG" },
+      constraints: { escortRequired: false, maxClassification: "HEMMELIG" },
+      validity: { type: "permanent" },
+      status: "active",
+    },
+  ],
+  // Lars — active, Building 4 visitor area, single-day (today), escort required, BEGRENSET
+  "07074078901": [
+    {
+      authorizationId: "NAR-AUTH-004",
+      personId: "07074078901",
+      siteId: "SITE-A",
+      scope: { scopeId: "SCOPE-BLDG4-VISITOR", scopeType: "zone", displayName: "Building 4 Visitor Area", classification: "BEGRENSET" },
+      constraints: { escortRequired: true, timeWindows: [{ days: "mon-fri", from: "08:00", to: "16:00" }], maxClassification: "BEGRENSET" },
+      validity: { type: "single-day", date: today },
+      status: "active",
+    },
+  ],
+  // Erik — revoked authorization
+  "05056056789": [
+    {
+      authorizationId: "NAR-AUTH-005",
+      personId: "05056056789",
+      siteId: "SITE-A",
+      scope: { scopeId: "SCOPE-BLDG4", scopeType: "zone", displayName: "Building 4", classification: "KONFIDENSIELT" },
+      constraints: { escortRequired: false, maxClassification: "KONFIDENSIELT" },
+      validity: { type: "period", from: "2022-01-01", to: "2025-01-01" },
+      status: "revoked",
+    },
+  ],
+  // Silje — expired authorization
+  "06065067890": [
+    {
+      authorizationId: "NAR-AUTH-006",
+      personId: "06065067890",
+      siteId: "SITE-A",
+      scope: { scopeId: "SCOPE-BLDG4", scopeType: "zone", displayName: "Building 4", classification: "HEMMELIG" },
+      constraints: { escortRequired: false, maxClassification: "HEMMELIG" },
+      validity: { type: "period", from: "2020-01-01", to: "2023-01-01" },
+      status: "expired",
+    },
+  ],
+  // Others — no authorization (not present in map → empty array)
+};
+
+// GET /nar/authorization/physical?personId=X&siteId=Y — all physical authorizations for a person at a site
+app.get("/nar/authorization/physical", (c) => {
+  const personId = c.req.query("personId");
+  const siteId = c.req.query("siteId");
+
+  if (!personId) {
+    return c.json({ found: false, authorizations: [] });
+  }
+
+  const entries = narAuthorizations[personId];
+  if (!entries) {
+    return c.json({ found: false, authorizations: [] });
+  }
+
+  // Filter by siteId if provided
+  const filtered = siteId ? entries.filter((e) => e.siteId === siteId) : entries;
+
+  return c.json({ found: filtered.length > 0, authorizations: filtered });
+});
+
+// GET /nar/authorization/physical/check?personId=X&siteId=Y&scopeId=Z — check specific scope access
+app.get("/nar/authorization/physical/check", (c) => {
+  const personId = c.req.query("personId");
+  const siteId = c.req.query("siteId");
+  const scopeId = c.req.query("scopeId");
+
+  if (!personId || !siteId || !scopeId) {
+    return c.json({ authorized: false, escortRequired: false, reason: "missing required parameters" });
+  }
+
+  const entries = narAuthorizations[personId];
+  if (!entries) {
+    return c.json({ authorized: false, escortRequired: false, reason: "no authorization for person" });
+  }
+
+  const auth = entries.find((e) => e.siteId === siteId && e.scope.scopeId === scopeId);
+  if (!auth) {
+    return c.json({ authorized: false, escortRequired: false, reason: "no authorization for scope" });
+  }
+
+  if (auth.status === "revoked") {
+    return c.json({ authorized: false, escortRequired: false, reason: "authorization revoked", authorization: auth });
+  }
+
+  if (auth.status === "expired") {
+    return c.json({ authorized: false, escortRequired: false, reason: "authorization expired", authorization: auth });
+  }
+
+  return c.json({
+    authorized: true,
+    escortRequired: auth.constraints.escortRequired,
+    authorization: auth,
+  });
+});
+
 // ── Health ───────────────────────────────────────────────────────────
 
-app.get("/health", (c) => c.json({ status: "ok", stubs: ["freg", "nkr", "sap", "brreg"] }));
+app.get("/health", (c) => c.json({ status: "ok", stubs: ["freg", "nkr", "sap", "brreg", "nar"] }));
 
 console.log(`[register-stubs] Starting on port ${PORT}`);
 serve({ fetch: app.fetch, port: PORT });

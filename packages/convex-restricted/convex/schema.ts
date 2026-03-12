@@ -47,7 +47,8 @@ export default defineSchema({
         v.literal("freg"),
         v.literal("nkr"),
         v.literal("brreg"),
-        v.literal("sap_hr")
+        v.literal("sap_hr"),
+        v.literal("nar")
       ),
       result: v.string(),
       modifier: v.number(),
@@ -58,6 +59,22 @@ export default defineSchema({
     approvalTier: v.string(), // ApprovalTier
     badgeId: v.optional(v.string()),
     accessLevelIds: v.optional(v.array(v.string())),
+    // Multi-site: additional sites beyond primary siteId
+    additionalSites: v.optional(v.array(v.string())),
+    // Per-site badge encoding status for cross-site visits
+    siteEncodingStatus: v.optional(v.array(v.object({
+      siteId: v.string(),
+      status: v.union(
+        v.literal("pending"),
+        v.literal("encoded"),
+        v.literal("failed"),
+        v.literal("pending_retry"),
+      ),
+      onguardBadgeKey: v.optional(v.number()),
+      error: v.optional(v.string()),
+      lastAttempt: v.optional(v.number()),
+      attempts: v.number(),
+    }))),
     diodeCorrelationId: v.string(), // Links back to unclass side
     checkedInAt: v.optional(v.number()),
     checkedOutAt: v.optional(v.number()),
@@ -140,6 +157,19 @@ export default defineSchema({
     attempts: v.number(),
     lastAttempt: v.optional(v.number()),
   }).index("by_status", ["status"]),
+
+  // Site configuration — multi-site operations
+  siteConfig: defineTable({
+    siteId: v.string(),
+    name: v.string(),
+    description: v.optional(v.string()),
+    onguardEndpoint: v.string(),
+    onguardPort: v.number(),
+    defaultAccessLevels: v.array(v.string()),
+    cardPoolMinAlert: v.number(),
+    timezone: v.string(),
+    active: v.boolean(),
+  }).index("by_siteId", ["siteId"]),
 
   // Access levels — synced from OnGuard mock, used for assignment UI
   accessLevels: defineTable({

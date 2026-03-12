@@ -482,22 +482,31 @@ OnGuard offers two integration APIs. OpenAccess is the strategic direction.
 
 ```mermaid
 graph TB
-    subgraph CARD["DESFire EV3 Card"]
+    subgraph CARD["DESFire EV3 Card (up to 28 applications)"]
         PICC["PICC Master Key<br/>(Card-level, AES-128)"]
-        subgraph APPS["Applications"]
-            APP1["App 01: Home Site<br/>(Employee credential)<br/>Keys: Home site master<br/>Data: Employee ID, base access"]
-            APP2["App 02: Destination Site<br/>(Visitor credential)<br/>Keys: Destination site master<br/>Data: Visitor ID, visit access levels"]
-            APP3["App 03: Site C<br/>(Visitor credential)<br/>Keys: Site C master<br/>Data: ..."]
-            APPN["App NN: Future<br/>(PKI, transit, etc.)"]
+        subgraph SITE_APPS["Site Applications"]
+            APP1["App 01: Site A<br/>(Standard zones)<br/>Keys: Site A master<br/>Data: Employee/visitor ID, base access"]
+            APP2["App 02: Site B<br/>(Standard zones)<br/>Keys: Site B master<br/>Data: Visitor ID, visit access levels"]
+            APP3["App 03: Site C<br/>(Standard zones)<br/>Keys: Site C master<br/>Data: ..."]
+        end
+        subgraph OVERLAY_APPS["Overlay Applications"]
+            APP10["App 10: Classified Zone Overlay<br/>(SCIF, ops center, classified labs)<br/>Keys: Central Security Authority<br/>Gate: NKR clearance + score ≥90"]
+            APP11["App 11: High-Value Zone Overlay<br/>(Server rooms, armory, comms bunkers)<br/>Keys: Site Facility Manager<br/>Gate: Score ≥70 + zone owner approval"]
+        end
+        subgraph FUTURE["Reserved"]
+            APPN["App 12+: Future<br/>(PKI, transit, etc.)"]
         end
     end
 
-    PICC -.->|"Controls app<br/>creation/deletion"| APPS
+    PICC -.->|"Controls app<br/>creation/deletion"| SITE_APPS
+    PICC -.->|"Controls app<br/>creation/deletion"| OVERLAY_APPS
 
     style PICC fill:#f96
     style APP1 fill:#9cf
     style APP2 fill:#9f9
     style APP3 fill:#ff9
+    style APP10 fill:#f66
+    style APP11 fill:#69f
     style APPN fill:#ccc
 ```
 
@@ -593,6 +602,15 @@ stateDiagram-v2
     AppWiped --> [*]: Employee leaves with card<br/>(home site app unaffected)
 ```
 
+### Overlay App Lifecycle (App 10 / App 11)
+
+> **Note**: Overlay applications (App 10 — Classified Zone, App 11 — High-Value Zone) follow an independent lifecycle from site applications. An overlay app can be added or wiped without affecting any site app, and vice versa. Key points:
+>
+> - **App 10/11 are provisioned separately** from site apps, with their own approval chain (security officer for App 10, zone owner for App 11).
+> - **Wiping a site app does not affect overlay apps.** If a visitor checks out of Site B and App 02 is wiped, any App 10 or App 11 on the card remains valid until independently deactivated.
+> - **Wiping an overlay app does not affect site apps.** If classified zone access expires, App 10 is wiped but App 01/02 continue to work at standard doors.
+> - **Card reprinting is required** when overlay apps are added after initial card issuance, because the visual indicator (color stripe + hologram) must be updated. See [Section 10: Visual Indicators](#10-visual-indicators-for-manual-fallback).
+
 ## 4. Access Level Design
 
 ### Principles
@@ -647,3 +665,330 @@ Sites maintain a pool of pre-provisioned blank DESFire cards for external visito
 | Long-range readers | HID SIGNO 70 | Vehicle gates (if applicable) | DESFire EV1/EV2/EV3 |
 
 **Transition period**: Readers configured with dual secure identity object (SIO) profiles — legacy format + DESFire. Legacy profile removed site-by-site as migration completes.
+
+## 7. Multi-Site Standard Access
+
+> Source: [DESFire Card Architecture Design](../plans/2026-03-10-desfire-card-architecture-design.md)
+
+### How One Card Works Across Multiple Sites
+
+Each site manages its own DESFire application (App 01, App 02, etc.) with site-specific AES-128 keys. When a person has approved access at a site, that site's guard encodes the corresponding app onto the card. The card accumulates apps as the person visits more sites.
+
+```mermaid
+graph LR
+    subgraph CARD["DESFire EV3 Card"]
+        APP1["App 01<br/>(Site A)"]
+        APP2["App 02<br/>(Site B)"]
+    end
+
+    subgraph SITE_A["Site A"]
+        RA["Reader (Site A)<br/>Reads App 01 only"]
+    end
+
+    subgraph SITE_B["Site B"]
+        RB["Reader (Site B)<br/>Reads App 02 only"]
+    end
+
+    APP1 -->|"Auth"| RA
+    APP2 -->|"Auth"| RB
+
+    style APP1 fill:#9cf
+    style APP2 fill:#9f9
+```
+
+- Reader at Site A reads App 01 only — it cannot read or interact with App 02
+- Reader at Site B reads App 02 only — it cannot read or interact with App 01
+- A person with both apps can tap at standard doors at either site
+- If the person only has App 01, Site B readers find no valid app and deny access
+
+### App Lifecycle by Access Pattern
+
+**Permanent access:**
+- App stays on card permanently
+- OnGuard access levels renewed periodically (annual review)
+- Card does not need re-encoding on each visit
+- If access is revoked at one site, only that site's app is deactivated — other apps are unaffected
+
+**Occasional / time-bounded access:**
+- App written at arrival by destination site guard
+- Time-bounded via OnGuard `ACTIVATE`/`DEACTIVATE` (e.g., 08:00-18:00)
+- App wiped or deactivated at checkout
+- On next visit, app is re-written with a new time window
+
+**Denied:**
+- Visit request crosses the diode to the destination site
+- RESTRICTED side runs verification (identity score, NKR status, flags from other sites)
+- If denied, no app is ever written to the card
+
+### Reference Persona Scenarios
+
+| Persona | Site A | Site B | Card state |
+|---|---|---|---|
+| **Marte Haugen** (FD internal) | Permanent, checked in | Permanent access | App 01 + App 02 always present, renewed annually |
+| **Anna Lindqvist** (Kongsberg) | Day visit, completed | Occasional, time-bounded | App 01 (active during Site A visit) + App 02 (written at Site B arrival, wiped at checkout) |
+| **Thomas Müller** (Rheinmetall) | Flagged, under review | Requests access → denied | App 01 only (if approved at Site A). Site B runs verification, denies based on flagged status + low score |
+
+```mermaid
+sequenceDiagram
+    participant CARD as DESFire Card
+    participant SA as Site A Guard
+    participant SB as Site B Guard
+    participant OG_B as OnGuard (Site B)
+
+    Note over CARD,OG_B: Marte — permanent dual-site
+    SA->>CARD: App 01 encoded (permanent)
+    SB->>CARD: App 02 encoded (permanent)
+    Note over CARD: Card has App 01 + App 02 always
+
+    Note over CARD,OG_B: Anna — occasional time-bounded
+    SA->>CARD: App 01 encoded (day visit)
+    Note over CARD: Anna visits Site B
+    SB->>CARD: App 02 encoded (08:00-18:00)
+    SB->>OG_B: Activate badge (time-bounded)
+    Note over CARD: Anna checks out of Site B
+    SB->>CARD: App 02 wiped
+    SB->>OG_B: Deactivate badge
+    Note over CARD: Card retains App 01 only
+
+    Note over CARD,OG_B: Thomas — denied at Site B
+    Note over OG_B: Verification: flagged, score 45, no clearance
+    Note over OG_B: DENIED — no app written
+```
+
+## 8. Special Area Overlay Applications
+
+> Source: [DESFire Card Architecture Design](../plans/2026-03-10-desfire-card-architecture-design.md)
+
+Overlay applications provide access to restricted physical areas that require authorization beyond standard site access. Readers at these zones perform **dual-app authentication** — the person must have both the standard site app and the relevant overlay app.
+
+### Case 1: Classified Zones (App 10)
+
+**Areas:** SCIFs, ops centers, classified labs.
+
+**Requirements:**
+- NKR active security clearance
+- `high_security` access tier (identity score ≥90)
+- Separate approval from the security officer (distinct from standard visit approval)
+
+**Key characteristics:**
+- App 10 has its own AES-128 key hierarchy, completely isolated from site apps
+- Managed by the **Central Security Authority** (not individual sites) — classified zone readers may exist at multiple sites but share the same trust domain
+- App 10 works at classified zones at both Site A and Site B — same keys, same trust domain
+- A stolen App 10 credential without a valid site app is useless (dual-app auth)
+
+**Provisioning flow:**
+
+```mermaid
+sequenceDiagram
+    participant SO as Security Officer
+    participant NKR as NKR (Clearance Check)
+    participant GUARD as Guard (Classified Zone Encoder)
+    participant CARD as DESFire Card
+    participant OG as OnGuard
+
+    SO->>NKR: Verify active clearance
+    NKR-->>SO: Clearance confirmed (score ≥90)
+    SO->>SO: Approve classified zone access
+    SO->>GUARD: Authorization to encode App 10
+    GUARD->>CARD: Encode App 10 (AES-128, Central Security Authority keys)
+    GUARD->>OG: Activate classified zone access levels (time-bounded)
+    Note over CARD: Card now has site app + App 10
+    Note over CARD: On checkout/expiry: App 10 wiped, site apps remain
+```
+
+### Case 2: High-Value Physical Zones (App 11)
+
+**Areas:** Server rooms, armory, comms bunkers, generator rooms.
+
+**Requirements:**
+- `unescorted` access tier (identity score ≥70)
+- Explicit zone owner authorization (e.g., IT manager for server rooms)
+
+**Key characteristics:**
+- App 11 has a separate key hierarchy from both site apps and classified apps
+- Managed **per-site by the facility manager** (not the central security authority)
+- Each site's App 11 is independent — Site A's server room keys differ from Site B's
+- Access levels within App 11 specify which high-value zones (not all — only approved ones)
+
+**Provisioning flow:**
+
+```mermaid
+sequenceDiagram
+    participant ZO as Zone Owner (e.g., IT Manager)
+    participant GUARD as Guard (Reception Encoder)
+    participant CARD as DESFire Card
+    participant OG as OnGuard
+
+    ZO->>GUARD: Approve access to specific high-value zone(s)
+    GUARD->>CARD: Encode App 11 (AES-128, Site Facility Manager keys)
+    GUARD->>OG: Activate high-value zone access levels (time-bounded)
+    Note over CARD: Card now has site app + App 11
+    Note over CARD: On checkout/expiry: App 11 wiped, site apps remain
+```
+
+### Comparison Table
+
+| Aspect | Classified (App 10) | High-Value (App 11) |
+|---|---|---|
+| Gate | NKR active clearance | Zone owner approval |
+| Access tier | `high_security` (≥90) | `unescorted` (≥70) or above |
+| Key authority | Central Security Authority | Site Facility Manager |
+| Approval flow | Security officer | Zone owner + standard approval chain |
+| Spans sites | Yes (same App 10 at all sites) | No (each site's App 11 is independent) |
+| Reader config | Site app + App 10 (dual-app) | Site app + App 11 (dual-app) |
+| Use case examples | SCIF, ops center, classified lab | Server room, armory, comms bunker |
+
+### Reader Configuration by Zone Type
+
+| Zone type | Reader requires | Example |
+|---|---|---|
+| Standard (lobby, offices) | Site app only (App 01 or App 02) | Office wing A door at Site A reads App 01 |
+| Classified | Site app AND App 10 (dual-app auth) | SCIF door at Site A reads App 01 + App 10 |
+| High-value physical | Site app AND App 11 (dual-app auth) | Server room at Site B reads App 02 + App 11 |
+
+## 9. Pool-Issued Cards for Non-Permanent Personnel
+
+> Source: [DESFire Card Architecture Design](../plans/2026-03-10-desfire-card-architecture-design.md)
+
+### Who Gets a Pool Card
+
+| Category | Card lifecycle | Typical duration |
+|---|---|---|
+| Short-term contractor | Issued at first visit, returned at contract end | Weeks to months |
+| Long-term contractor | Issued, kept for duration, returned at contract end | Months to years |
+| Family member (family day, housing area) | Issued per event or season, returned after | Hours to days |
+| Retired personnel (veterans' events, alumni access) | Issued per visit, returned after | Hours to days |
+
+### How Pool Cards Accumulate Apps Across Sites
+
+```mermaid
+sequenceDiagram
+    participant POOL as Card Pool (Site A)
+    participant GA as Guard (Site A)
+    participant CARD as DESFire Card
+    participant GB as Guard (Site B)
+
+    POOL->>GA: Pull blank card from pool
+    GA->>CARD: Encode App 01 (Site A)
+    GA->>CARD: Print name, photo, expiry
+    Note over CARD: Card has App 01
+
+    Note over CARD,GB: Person visits Site B
+    GB->>CARD: Encode App 02 (Site B)
+    Note over CARD: Card now has App 01 + App 02
+    Note over GB: Site B does not touch App 01
+
+    Note over CARD,POOL: Contract ends — card returned
+    GA->>CARD: Wipe all apps (01, 02, any overlays)
+    GA->>POOL: Return blank card to pool
+```
+
+### Differences from Employee Cards
+
+| Aspect | Employee (permanent) | Pool-issued (non-permanent) |
+|---|---|---|
+| PICC master key | Central Authority provisions | Central Authority provisions (same) |
+| Card storage | Person keeps it permanently | Person keeps during contract/event, returns after |
+| Card tracking | Linked to employee ID | Linked to pool serial + visitor/contractor ID |
+| Loss procedure | Report, revoke all apps, issue new | Report, revoke all apps, issue new from pool |
+| Expiry | Annual renewal | Contract end date or event end |
+| Overlay eligibility | All overlays based on clearance/approval | App 11 possible for long-term contractors; App 10 rare |
+| Return requirement | No (unless leaving employment) | Yes — must return to issuing site's pool |
+
+### Contractor-Specific Rules
+
+- `long_term_contractor` access tier (≥100 points: FREG positive + NKR no flags + Brønnøysund valid) can receive high-value overlay (App 11) if zone owner approves
+- Short-term contractors typically get `escorted_day` or `escorted_recurring` — no overlay apps
+- Contractor's company is validated via **Brønnøysund on every visit** (not just first issuance)
+- If Brønnøysund revalidation fails (company dissolved, flagged), all apps are deactivated pending review
+
+### Card Pool Tracking — Data Model
+
+New table: `cardPool` (RESTRICTED side)
+
+| Field | Type | Description |
+|---|---|---|
+| `cardSerial` | string | DESFire card UID (read from card) |
+| `issuedTo` | string? | Visitor/contractor ID (null when in pool) |
+| `issuedToName` | string? | Person name (for quick lookup) |
+| `issuingSiteId` | string | Site that owns this card |
+| `encodedApps` | string[] | App IDs currently on card (e.g., `["01", "02", "10"]`) |
+| `issuedAt` | number? | Timestamp of issuance |
+| `expectedReturnDate` | string? | Contract end or event end date (ISO date) |
+| `status` | enum | `in_pool` / `issued` / `reported_lost` / `destroyed` |
+
+Indexes: `by_serial` (cardSerial), `by_status_site` (status + issuingSiteId), `by_issued_to` (issuedTo).
+
+## 10. Visual Indicators for Manual Fallback
+
+> Source: [DESFire Card Architecture Design](../plans/2026-03-10-desfire-card-architecture-design.md)
+
+### Design Decision
+
+When electronic readers fail (power outage, system failure), guards must visually identify a card's authorization level. The chosen approach combines two layers: **color stripe** (instant recognition) and **holographic overlay** (forge resistance).
+
+### Color Scheme
+
+| Stripe | Hologram | Meaning | DESFire App |
+|---|---|---|---|
+| None | None | Standard access only (escorted/unescorted) | Site apps only |
+| **Red** | Red hologram | Classified zone access | App 10 |
+| **Blue** | Blue hologram | High-value zone access | App 11 |
+| **Red + Blue** | Dual hologram | Both overlays (rare, highest trust) | App 10 + App 11 |
+
+### Operational Procedures
+
+**Rush / emergency (stripe check):**
+1. Guard at classified zone door sees person approaching
+2. Red stripe visible at arm's length → allow entry, log manually
+3. No stripe → deny, redirect to standard entrance
+
+**Power outage / reader failure (full hologram check):**
+1. Guard verifies color stripe matches the zone type
+2. Guard inspects holographic overlay — confirms it matches stripe color and is not a forgery
+3. Guard checks name and photo on card
+4. Guard logs the manual entry for later audit reconciliation
+
+### Card Printing Integration
+
+The color stripe and holographic overlay are applied during card encoding at the reception desk:
+
+1. Card pulled from pool (blank white)
+2. DESFire apps encoded (site app + overlay apps if approved)
+3. Name, photo, and expiry date printed on card face
+4. Color stripe printed based on which overlay apps are encoded
+5. Holographic overlay applied (from pre-procured hologram stock matching the stripe color)
+
+**Reprinting requirement**: If overlay apps are added after initial card issuance (e.g., person later gains classified zone approval), the card must be **reprinted** with the updated stripe and hologram. The DESFire apps do not need re-encoding — only the physical card face changes.
+
+### Trade-Off Summary
+
+| Option | Instant recognition | Forge resistance | Rush scenario | Cost |
+|---|---|---|---|---|
+| Color stripe only | Excellent | Low | Excellent | Low |
+| Holographic only | Poor (needs inspection) | High | Poor | Medium |
+| UV-reactive | Poor (needs UV torch) | High | Very poor | Medium |
+| QR + digital signature | Poor (needs scanner) | Very high | Very poor | Low |
+| **Stripe + hologram (chosen)** | **Excellent** | **High** | **Excellent** | **Medium** |
+
+## 11. Key Management (Extended)
+
+> Source: [DESFire Card Architecture Design](../plans/2026-03-10-desfire-card-architecture-design.md)
+
+This section extends the key management overview in [Section 2](#2-mifare-desfire-ev3--card-architecture) to include the overlay application keys.
+
+| Key | Owner | Scope | Storage | Rotation Policy |
+|---|---|---|---|---|
+| PICC master key | Central Authority | Per-card (card-level control) | HSM | Annual or on compromise |
+| Site app master key | Site Security Admin | Per-site (standard zones) | HSM | Annual or on compromise |
+| App 10 master key | Central Security Authority | All classified zones, all sites | HSM (highest security) | On compromise only |
+| App 11 master key | Site Facility Manager | Per-site high-value zones | HSM or secure key store | Annual or on compromise |
+| Diversified card keys | Derived per card | Per-card-per-app | Computed from master + card UID | Follows master rotation |
+
+**Key isolation guarantees:**
+- Site A's keys cannot read or modify Site B's application data
+- App 10 keys are independent of all site app keys — compromising a site app key does not expose classified zone credentials
+- App 11 keys are independent per site — compromising Site A's App 11 key does not affect Site B's high-value zones
+- The PICC master key controls application creation/deletion but cannot read application data without the application's own keys
+
+**Critical**: Loss of any master key means loss of ability to manage that application on all affected cards. HSM backup and key escrow procedures are mandatory. The App 10 key ceremony should involve the Central Security Authority plus at least 2 witnesses, documented in operational procedures.

@@ -30,12 +30,14 @@ export default defineSchema({
     identitySources: v.array(v.string()),
     status: v.string(), // mirrors VisitStatus but simplified for unclass side
     diodeMessageId: v.optional(v.string()), // correlation ID for diode message
+    batchId: v.optional(v.string()), // set for contractor bulk submissions
     createdBy: v.string(), // user ID from auth
   })
     .index("by_status", ["status"])
     .index("by_sponsor", ["sponsorEmployeeId"])
     .index("by_site_date", ["siteId", "dateFrom"])
-    .index("by_diode_message", ["diodeMessageId"]),
+    .index("by_diode_message", ["diodeMessageId"])
+    .index("by_batch", ["batchId"]),
 
   // Sponsor actions (approvals, escort assignments)
   sponsorActions: defineTable({
@@ -72,6 +74,12 @@ export default defineSchema({
     attempts: v.number(),
     lastAttempt: v.optional(v.number()),
   }).index("by_status", ["status"]),
+
+  // Security course completions
+  courseCompletions: defineTable({
+    visitorId: v.string(),
+    completedAt: v.number(),
+  }).index("by_visitor", ["visitorId"]),
 
   // Diode inbox — messages received from restricted side
   diodeInbox: defineTable({
