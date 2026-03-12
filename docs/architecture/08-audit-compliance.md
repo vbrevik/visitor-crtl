@@ -82,7 +82,7 @@ graph TB
 
         subgraph PROCESSING["Log Processing"]
             AGG["Log Aggregator<br/>(Fluentd / Vector)"]
-            AUDIT_DB[("Append-Only<br/>Audit DB<br/>(PostgreSQL)")]
+            AUDIT_DB[("Append-Only<br/>Audit Log<br/>(Convex auditLog table)")]
             CHAIN["Crypto Chain<br/>Service"]
         end
 
@@ -188,36 +188,29 @@ graph TD
     end
 ```
 
-### Append-Only Database Design
+### Audit Log Schema
 
-```sql
--- Audit events table: no UPDATE or DELETE grants
-CREATE TABLE audit_events (
-    event_id        BIGSERIAL PRIMARY KEY,
-    event_timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    event_type      TEXT NOT NULL,
-    service         TEXT NOT NULL,
-    correlation_id  UUID NOT NULL,
-    actor_id        TEXT NOT NULL,
-    actor_role      TEXT NOT NULL,
-    action          TEXT NOT NULL,
-    subject_type    TEXT NOT NULL,
-    subject_id      TEXT NOT NULL,
-    result          TEXT NOT NULL,
-    details         JSONB,
-    -- Crypto chain (access decisions only)
-    chain_hash      TEXT,  -- SHA-256 hash including previous entry
-    previous_hash   TEXT,  -- Reference to previous chain entry
-    signature       TEXT   -- Digital signature of chain_hash
-);
+The mock environment implements the audit log as a Convex table (`auditLog` in `packages/convex-restricted/convex/schema.ts`). Append-only enforcement is by convention (no Convex-level constraint); production deployment would enforce this at the database level.
 
--- Service account: INSERT only
-GRANT INSERT ON audit_events TO visitor_service;
--- No UPDATE, DELETE, or TRUNCATE granted
-
--- Auditor account: SELECT only
-GRANT SELECT ON audit_events TO auditor;
+```typescript
+// packages/convex-restricted/convex/schema.ts
+auditLog: defineTable({
+  eventType:   v.string(),   // e.g. "VISIT_APPROVED", "BADGE_ISSUED"
+  actorId:     v.string(),   // employee ID or "system"
+  actorRole:   v.string(),
+  subjectType: v.string(),   // e.g. "visit", "badge"
+  subjectId:   v.string(),
+  payload:     v.string(),   // JSON-stringified details
+  timestamp:   v.number(),   // Unix ms
+  prevHash:    v.string(),   // hash of previous entry ("" for first)
+  hash:        v.string(),   // SHA-256 of all fields
+  shippedAt:   v.number(),   // 0 = not yet shipped to Splunk
+})
 ```
+
+A companion `auditChainHead` singleton table stores the latest hash to force Convex OCC serialization of all audit writes, preventing chain forks.
+
+> **Production target**: Replace Convex table with a PostgreSQL append-only table (INSERT-only grants, no UPDATE/DELETE/TRUNCATE), digital signatures per entry, and enforce chain verification via the Auditor Dashboard.
 
 **What gets chained** (access decisions only):
 - Visit approved / denied

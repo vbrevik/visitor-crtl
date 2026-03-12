@@ -13,22 +13,12 @@
  */
 
 import { connect, StringCodec } from "nats";
+import { SUBJECTS, buildEnvelope, parseInboxEnvelope, parseOutboxResponse, type Side } from "./lib.js";
 
 const NATS_URL = process.env.NATS_URL ?? "nats://localhost:4222";
 const SIDE = process.env.SIDE ?? "unclass";
 const CONVEX_URL = process.env.CONVEX_URL ?? "http://localhost:3210";
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? "2000");
-
-const SUBJECTS = {
-  unclass: {
-    publish: "diode.u2r.outbox",
-    subscribe: "diode.r2u.inbox",
-  },
-  restricted: {
-    publish: "diode.r2u.outbox",
-    subscribe: "diode.u2r.inbox",
-  },
-} as const;
 
 /** Fetch pending outbox messages from Convex via its HTTP API. */
 async function fetchOutboxMessages(): Promise<
@@ -47,8 +37,8 @@ async function fetchOutboxMessages(): Promise<
       console.error(`[diode-gateway] Outbox query failed: HTTP ${res.status}`);
       return [];
     }
-    const data = (await res.json()) as { value?: Array<{ _id: string; correlationId: string; messageType: string; payload: string }> };
-    return data.value ?? [];
+    const data = await res.json();
+    return parseOutboxResponse(data);
   } catch (err) {
     console.error("[diode-gateway] Outbox fetch error:", err);
     return [];
@@ -73,22 +63,22 @@ async function markMessageSent(messageId: string): Promise<void> {
 
 /** Forward incoming NATS message to Convex diodeInbox via HTTP mutation. */
 async function forwardToInbox(data: string): Promise<void> {
+  const parsed = parseInboxEnvelope(data);
+  if (!parsed) {
+    console.error("[diode-gateway] Failed to parse inbox envelope, skipping");
+    return;
+  }
   try {
-    const envelope = JSON.parse(data);
     await fetch(`${CONVEX_URL}/api/mutation`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         path: "diodeInbox:receive",
-        args: {
-          messageType: envelope.messageType,
-          correlationId: envelope.correlationId,
-          payload: envelope.payload ?? data,
-        },
+        args: parsed,
       }),
     });
     console.log(
-      `[diode-gateway] Forwarded to inbox: ${envelope.messageType} (${envelope.correlationId})`,
+      `[diode-gateway] Forwarded to inbox: ${parsed.messageType} (${parsed.correlationId})`,
     );
   } catch (err) {
     console.error("[diode-gateway] Failed to forward to inbox:", err);
@@ -96,7 +86,7 @@ async function forwardToInbox(data: string): Promise<void> {
 }
 
 async function main() {
-  const side = SIDE as keyof typeof SUBJECTS;
+  const side = SIDE as Side;
   if (!SUBJECTS[side]) {
     console.error(`[diode-gateway] Invalid SIDE="${SIDE}". Must be "unclass" or "restricted".`);
     process.exit(1);
@@ -132,13 +122,7 @@ async function main() {
   const poll = async () => {
     const messages = await fetchOutboxMessages();
     for (const msg of messages) {
-      const envelope = JSON.stringify({
-        messageType: msg.messageType,
-        correlationId: msg.correlationId,
-        payload: msg.payload,
-        sentAt: new Date().toISOString(),
-        side,
-      });
+      const envelope = JSON.stringify(buildEnvelope(msg, side));
 
       nc.publish(subjects.publish, sc.encode(envelope));
       console.log(

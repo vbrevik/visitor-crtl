@@ -99,13 +99,20 @@ Keycloak (port 8180) mocks two OIDC realms: ID-porten and Mil Feide. Portal uses
 - Vitest (testing)
 - Keycloak 24 (mock IdP)
 
-## Planning Documents
+## Documentation
 
-Comprehensive architecture docs in `docs/plan/` (00-overview through 12-mock-infrastructure). Key ones:
-- `03-identity-verification.md` — scoring model design
-- `04-access-control.md` — access tiers, state machines
-- `05-diode-messaging.md` — XML message format, diode protocol
-- `12-mock-infrastructure.md` — mock service specifications
+| Folder | Content |
+|--------|---------|
+| `docs/architecture/` | Numbered reference docs (00–12): network, workflows, identity, access control, diode, services, audit, risk |
+| `docs/design/` | Date-prefixed design explorations (YYYY-MM-DD-*.md) |
+| `docs/plans/` | Date-prefixed implementation plans |
+| `docs/specs/` | Date-prefixed prompt contracts / feature specs |
+
+Key architecture docs:
+- `docs/architecture/03-identity-verification.md` — scoring model design
+- `docs/architecture/04-access-control.md` — access tiers, state machines
+- `docs/architecture/05-diode-messaging.md` — XML message format, diode protocol
+- `docs/architecture/12-mock-infrastructure.md` — mock service specifications
 
 ## Conventions
 

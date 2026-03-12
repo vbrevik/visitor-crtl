@@ -317,5 +317,7 @@ app.get("/nar/authorization/physical/check", (c) => {
 
 app.get("/health", (c) => c.json({ status: "ok", stubs: ["freg", "nkr", "sap", "brreg", "nar"] }));
 
+export default app;
+
 console.log(`[register-stubs] Starting on port ${PORT}`);
 serve({ fetch: app.fetch, port: PORT });
