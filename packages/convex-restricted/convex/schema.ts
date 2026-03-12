@@ -149,4 +149,30 @@ export default defineSchema({
     zones: v.array(v.string()),
     requiredScoreTier: v.string(), // AccessTier
   }).index("by_name", ["name"]),
+
+  // Tamper-evident audit log — append-only by convention.
+  // Production: PostgreSQL with INSERT-only grants and no UPDATE/DELETE.
+  // TODO: Production should enforce append-only at the DB level, not just by convention.
+  auditLog: defineTable({
+    eventType: v.string(),
+    actorId: v.string(),          // TODO: Replace "system" with real actor IDs when auth (E13) is wired
+    actorRole: v.string(),
+    subjectType: v.string(),
+    subjectId: v.string(),
+    payload: v.string(),          // JSON-stringified details
+    timestamp: v.number(),
+    prevHash: v.string(),         // hash of previous entry ("" for first)
+    hash: v.string(),             // SHA-256 of ALL fields (see computeHash)
+    shippedAt: v.number(),        // 0 = not yet shipped to Splunk
+  })
+    .index("by_eventType", ["eventType"])
+    .index("by_subjectId", ["subjectId"])
+    .index("by_timestamp", ["timestamp"])
+    .index("by_shipped", ["shippedAt"]),
+
+  // Singleton document storing the latest hash in the audit chain.
+  // Forces Convex OCC serialization of all audit writes, preventing chain forks.
+  auditChainHead: defineTable({
+    latestHash: v.string(),
+  }),
 });
