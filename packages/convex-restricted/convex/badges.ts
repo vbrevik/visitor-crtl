@@ -20,77 +20,91 @@ export const issueBadge = action({
     deactivateAt: v.string(), // ISO date
   },
   handler: async (ctx, args) => {
-    // Step 1: Create visitor in OnGuard
-    const visitorRes = await fetch(
-      `${ONGUARD_URL}/instances?type_name=Lnl_Visitor`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          property_value_map: {
-            FIRSTNAME: args.firstName,
-            LASTNAME: args.lastName,
-            EMAIL: args.email ?? "",
-          },
-        }),
-      },
-    );
-    if (!visitorRes.ok) throw new Error(`OnGuard create visitor failed: ${visitorRes.status}`);
-    const visitor = (await visitorRes.json()) as { property_value_map?: { ID?: number } };
-    const visitorId = visitor.property_value_map?.ID;
-
-    // Step 2: Create badge
-    const badgeRes = await fetch(
-      `${ONGUARD_URL}/instances?type_name=Lnl_Badge`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          property_value_map: {
-            BADGEID: Math.floor(Math.random() * 900000) + 100000,
-            PERSONID: visitorId,
-            TYPE: 2, // DESFire Visitor badge type
-            STATUS: 1, // Active
-            ACTIVATE: new Date().toISOString(),
-            DEACTIVATE: args.deactivateAt,
-          },
-        }),
-      },
-    );
-    if (!badgeRes.ok) throw new Error(`OnGuard create badge failed: ${badgeRes.status}`);
-    const badge = (await badgeRes.json()) as { property_value_map?: { BADGEKEY?: number; BADGEID?: number } };
-    const badgeKey = badge.property_value_map?.BADGEKEY;
-
-    // Step 3: Assign access levels
-    for (const alId of args.accessLevelIds) {
-      await fetch(
-        `${ONGUARD_URL}/instances?type_name=Lnl_AccessLevelAssignment`,
+    try {
+      // Step 1: Create visitor in OnGuard
+      const visitorRes = await fetch(
+        `${ONGUARD_URL}/instances?type_name=Lnl_Visitor`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             property_value_map: {
-              BADGEKEY: badgeKey,
-              ACCESSLEVELID: alId,
+              FIRSTNAME: args.firstName,
+              LASTNAME: args.lastName,
+              EMAIL: args.email ?? "",
+            },
+          }),
+        },
+      );
+      if (!visitorRes.ok) throw new Error(`OnGuard create visitor failed: ${visitorRes.status}`);
+      const visitor = (await visitorRes.json()) as { property_value_map?: { ID?: number } };
+      const visitorId = visitor.property_value_map?.ID;
+
+      // Step 2: Create badge
+      const badgeRes = await fetch(
+        `${ONGUARD_URL}/instances?type_name=Lnl_Badge`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            property_value_map: {
+              BADGEID: Math.floor(Math.random() * 900000) + 100000,
+              PERSONID: visitorId,
+              TYPE: 2, // DESFire Visitor badge type
+              STATUS: 1, // Active
               ACTIVATE: new Date().toISOString(),
               DEACTIVATE: args.deactivateAt,
             },
           }),
         },
       );
+      if (!badgeRes.ok) throw new Error(`OnGuard create badge failed: ${badgeRes.status}`);
+      const badge = (await badgeRes.json()) as { property_value_map?: { BADGEKEY?: number; BADGEID?: number } };
+      const badgeKey = badge.property_value_map?.BADGEKEY;
+
+      // Step 3: Assign access levels
+      for (const alId of args.accessLevelIds) {
+        await fetch(
+          `${ONGUARD_URL}/instances?type_name=Lnl_AccessLevelAssignment`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              property_value_map: {
+                BADGEKEY: badgeKey,
+                ACCESSLEVELID: alId,
+                ACTIVATE: new Date().toISOString(),
+                DEACTIVATE: args.deactivateAt,
+              },
+            }),
+          },
+        );
+      }
+
+      // Step 4: Save badge record in Convex
+      await ctx.runMutation(internal.badges.saveBadge, {
+        visitId: args.visitId,
+        onguardBadgeKey: badgeKey,
+        onguardVisitorId: visitorId,
+        badgeNumber: String(badge.property_value_map?.BADGEID),
+        accessLevelIds: args.accessLevelIds.map(String),
+        deactivateAt: new Date(args.deactivateAt).getTime(),
+      });
+
+      return { badgeKey, visitorId };
+    } catch (error) {
+      await ctx.runMutation(internal.auditLog.logAuditEvent, {
+        eventType: "ONGUARD_PROVISION_FAILED",
+        actorId: "system",
+        actorRole: "badge_service",
+        subjectType: "badge",
+        subjectId: args.visitId,
+        payload: JSON.stringify({
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      });
+      throw error;
     }
-
-    // Step 4: Save badge record in Convex
-    await ctx.runMutation(internal.badges.saveBadge, {
-      visitId: args.visitId,
-      onguardBadgeKey: badgeKey,
-      onguardVisitorId: visitorId,
-      badgeNumber: String(badge.property_value_map?.BADGEID),
-      accessLevelIds: args.accessLevelIds.map(String),
-      deactivateAt: new Date(args.deactivateAt).getTime(),
-    });
-
-    return { badgeKey, visitorId };
   },
 });
 
@@ -98,21 +112,36 @@ export const issueBadge = action({
 export const deactivateBadge = action({
   args: { badgeKey: v.number(), visitId: v.id("visits") },
   handler: async (ctx, args) => {
-    await fetch(`${ONGUARD_URL}/instances?type_name=Lnl_Badge`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        property_value_map: {
-          BADGEKEY: args.badgeKey,
-          STATUS: 0, // Inactive
-        },
-      }),
-    });
+    try {
+      await fetch(`${ONGUARD_URL}/instances?type_name=Lnl_Badge`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          property_value_map: {
+            BADGEKEY: args.badgeKey,
+            STATUS: 0, // Inactive
+          },
+        }),
+      });
 
-    await ctx.runMutation(internal.badges.updateBadgeStatus, {
-      visitId: args.visitId,
-      status: "deactivated",
-    });
+      await ctx.runMutation(internal.badges.updateBadgeStatus, {
+        visitId: args.visitId,
+        status: "deactivated",
+      });
+    } catch (error) {
+      await ctx.runMutation(internal.auditLog.logAuditEvent, {
+        eventType: "BADGE_DEACTIVATION_FAILED",
+        actorId: "system",
+        actorRole: "badge_service",
+        subjectType: "badge",
+        subjectId: args.visitId,
+        payload: JSON.stringify({
+          badgeKey: args.badgeKey,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      });
+      throw error;
+    }
   },
 });
 
