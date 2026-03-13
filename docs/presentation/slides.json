@@ -3,7 +3,7 @@
     "title": "Besøksstyringssystem — System Walkthrough",
     "subtitle": "Step-by-step demonstration of the visitor lifecycle",
     "author": "VMS Project Team",
-    "date": "2026-02-25",
+    "date": "2026-03-13",
     "layout": "16:9",
     "colorScheme": {
       "primary": "#1C2833",
@@ -545,18 +545,18 @@
     {
       "id": "closing",
       "type": "closing",
-      "title": "Summary: Four Storylines, One System",
+      "title": "Summary: Five Storylines, Hardened Foundation",
       "bullets": [
-        "Story A (Anna): Complete happy-path — registration to check-out",
-        "Story B (Thomas): Foreign contractor flagged — score below threshold",
-        "Story C (Petter): Walk-in delivery — guard registers on-the-spot",
-        "Story D (Ivan): Denied — unverifiable identity, non-existent company",
-        "5 user-facing applications serving distinct roles across the air gap",
-        "Full audit trail for NSM + NIST CSF 2.0 compliance",
-        "Mock infrastructure enables end-to-end demonstration",
-        "Story E (Cross-Site): Marte permanent dual-site, Anna time-bounded, Thomas denied, classified overlay"
+        "Story A–E: Complete visitor lifecycle across 5 scenarios and cross-site access",
+        "Tamper-evident audit log with SHA-256 hash chain and Splunk shipping",
+        "ABAC authorization: 9 roles × 6 actions, site-scoped, fully tested",
+        "DISA STIG baseline: 46 controls assessed, 8 passed, security pipeline active",
+        "121 backend tests passing (audit, visits, ABAC, identity scoring)",
+        "Security hardening roadmap: 9 CAT I fixes → 7 CAT II fixes → GDPR compliance",
+        "Mock infrastructure enables end-to-end demonstration on a single machine",
+        "Next: JWT auth, NATS TLS, diode HMAC signing, container hardening"
       ],
-      "notes": "This walkthrough demonstrates the mock implementation with realistic data. The production system will use real Convex backends, actual data diodes, hardware badge encoders, and integration with live Norwegian government registers."
+      "notes": "Updated 2026-03-13. The system now includes tamper-evident audit logging, ABAC authorization, and a DISA STIG compliance baseline. Security hardening (E16–E18) is the next priority before accreditation review."
     },
 
     {
@@ -707,6 +707,244 @@
         "1:1 mapping: stripe color = overlay app = zone type — no ambiguity",
         "Combo scores highest on both instant-recognition AND forge-resistance"
       ]
+    },
+
+    {
+      "id": "dev-progress-break",
+      "type": "section-break",
+      "title": "Development Progress & Security Hardening",
+      "subtitle": "What's been built, what's planned, and how we get to accreditation",
+      "notes": "This section covers the implementation progress since the initial architecture demo, the security pipeline results, and the planned hardening roadmap."
+    },
+
+    {
+      "id": "dev-progress",
+      "type": "technical",
+      "title": "Development Progress — What's Been Built",
+      "description": "Since the initial architecture demo, the RESTRICTED backend has been hardened with tamper-evident audit logging, ABAC authorization, and a comprehensive test suite. The identity scoring engine is fully integrated across both classification sides.",
+      "sections": [
+        {
+          "heading": "E1 — Audit & Compliance Logging ✅",
+          "items": [
+            "Tamper-evident SHA-256 hash chain: each entry links to previous via prevHash→hash",
+            "Audit hooks on all visit transitions, register verifications, and badge events",
+            "Query API with pagination, filtering by eventType/subjectId/time range",
+            "verifyChainIntegrity query detects tampered hashes and broken links",
+            "Splunk log-to-file shipping via cron-scheduled Convex action"
+          ]
+        },
+        {
+          "heading": "E2 — Test Infrastructure (Partial)",
+          "items": [
+            "convex-test harness: isolated Convex context per test (no running server needed)",
+            "21 audit log tests: chain integrity, field content, tamper detection, ABAC",
+            "14 visit tests: state transitions, invalid paths, audit logging, ABAC",
+            "100 identity scoring tests: all source combinations, register modifiers, edge cases",
+            "121 total backend tests passing"
+          ]
+        },
+        {
+          "heading": "ABAC Authorization ✅",
+          "items": [
+            "9 roles: reception_guard, security_officer, escort, unit_manager, site_admin, auditor, sponsor, contractor_admin, external_visitor",
+            "6 protected actions: visit:approve, visit:admit, visit:checkout, audit:query, audit:verify, badge:issue",
+            "Site-scoped: actors only see/act on their own site's data",
+            "Shared policy engine in @vms/shared — used by restricted backend",
+            "parseActor helper validates actor identity on every mutation/query"
+          ]
+        }
+      ],
+      "justification": [
+        "Audit-first: No defense system can pass accreditation without immutable audit trails — this was Sprint 1 priority",
+        "ABAC before JWT: Policy engine and enforcement points are in place; JWT integration (E16-F3) swaps the identity source without changing authorization logic",
+        "Test-driven: Every audit and ABAC feature was built with tests first — 121 tests prevent regressions",
+        "Hash chain: SHA-256 chain with OCC serialization prevents both tampering and race conditions"
+      ],
+      "notes": "Key commits: 96830ad (audit schema), 3c46d89 (audit writer), 402d8bc–b97f015 (hooks), d2dc04e (ABAC engine), 50485ce (ABAC on visits). All work on the feat/e1-audit-logging and feat/abac-core branches, merged to main."
+    },
+
+    {
+      "id": "stig-baseline",
+      "type": "technical",
+      "title": "DISA STIG Baseline Assessment",
+      "description": "A 5-skill automated security pipeline (static analysis, secret scan, SCA, container security, threat model) assessed 46 STIG controls. This establishes the security posture baseline and drives the hardening roadmap.",
+      "sections": [
+        {
+          "heading": "Pipeline Results — 2026-03-13",
+          "items": [
+            "46 controls tracked: 8 PASS, 17 FAIL, 9 MANUAL, 7 N/A, 5 NOT ASSESSED",
+            "24 CAT I findings across 5 tools — these block accreditation",
+            "Static analysis (semgrep): 11 audit calls without error handling",
+            "SCA (npm audit): 5 CVEs in hono / @hono/node-server",
+            "Container security: all 7 Dockerfiles run as root, no resource limits",
+            "Threat model (STRIDE+LINDDUN): 22 threats identified, 6 high-risk"
+          ]
+        },
+        {
+          "heading": "Key Passes",
+          "items": [
+            "Input validation: Convex typed validators + TypeScript strict mode",
+            "CSRF protection: Bearer token auth, OIDC state parameter",
+            "Command injection: No shell invocations in application code",
+            "SQL injection: Convex document DB — no SQL surface",
+            "Session uniqueness: Keycloak crypto-random session IDs",
+            "Audit record content: Full actor/action/target/timestamp structure"
+          ]
+        },
+        {
+          "heading": "Tools Used",
+          "items": [
+            "semgrep — STIG-mapped static analysis rules",
+            "gitleaks — secret scanning (0 findings in git history)",
+            "npm audit — dependency vulnerability scanning",
+            "trivy / dockerfile-lint — container security",
+            "STRIDE + LINDDUN — threat modeling (22 threats catalogued)"
+          ]
+        }
+      ],
+      "justification": [
+        "Automated pipeline: Reproducible assessments on every branch — catches regressions before merge",
+        "STIG alignment: Norwegian defense context maps DISA STIGs to NSM/NIST CSF 2.0 controls",
+        "Risk-scored: Each finding has a computed risk score (impact × likelihood) — prioritizes work",
+        "Dev-only mitigations: Some findings (hardcoded creds, realistic PII) are classified as dev-only risk"
+      ],
+      "notes": "Full baseline report at docs/compliance/reports/2026-03-13-full-pipeline.md. STIG status tracker at docs/compliance/stig-status.md. Pending tools: DAST and API fuzzing (require running servers)."
+    },
+
+    {
+      "id": "security-hardening-cat1",
+      "type": "technical",
+      "title": "Security Hardening — CAT I (Accreditation Blockers)",
+      "description": "9 features address all CAT I findings. These must be completed before any accreditation review. Sprint 1.5 priority. The highest-risk finding is client-supplied actor identity — fixable by wiring JWT auth from Keycloak.",
+      "sections": [
+        {
+          "heading": "Authentication & Identity (Risk: Critical)",
+          "items": [
+            "E16-F3: Server-derived actor identity — replace client args with ctx.auth JWT (V-222425, risk 25)",
+            "E16-F4: Diode inbox access control — change to internalMutation or service auth (V-222425, risk 20)",
+            "E16-F8: Secure token storage — BFF pattern or sessionStorage + CSP (V-222577)"
+          ]
+        },
+        {
+          "heading": "Transport & Data Integrity (Risk: High)",
+          "items": [
+            "E16-F5: NATS TLS + NKey auth — encrypted diode transport (V-222543, risk 15)",
+            "E16-F6: HMAC-SHA256 signing on diode XML envelopes — tamper detection (V-222536, risk 15)",
+            "E16-F7: XXE protection — disable external entities in XML parser (V-222608)",
+            "E16-F9: crypto.randomUUID() for badge IDs — replace Math.random() (V-222536)"
+          ]
+        },
+        {
+          "heading": "Operations & Dependencies (Risk: Medium-High)",
+          "items": [
+            "E16-F1: Audit log error handling — fail-closed on critical ops (V-222485, 11 locations)",
+            "E16-F2: Dependency CVE fix — update hono ≥4.12.7, @hono/node-server ≥1.19.10 (V-222551, 5 CVEs)"
+          ]
+        }
+      ],
+      "justification": [
+        "JWT-first: E16-F3 is the single highest-risk finding (score 25). Closes the trust gap between ABAC policy enforcement and identity verification.",
+        "HMAC before XML-DSig: HMAC-SHA256 is a pragmatic first step; full XML-DSig can follow if required for interoperability.",
+        "Fail-closed audit: If audit logging fails, the parent mutation must abort — prevents unlogged security events.",
+        "Dependency hygiene: 5 CVEs in hono include auth bypass and prototype pollution — single npm update fixes all."
+      ],
+      "notes": "E16-F3 depends on E13-F1 (Keycloak realm config). Interim mitigation: validate a shared secret for system/diode calls in parseActor. Full STIG V-ID mapping in docs/compliance/stig-status.md."
+    },
+
+    {
+      "id": "security-hardening-cat2",
+      "type": "technical",
+      "title": "Security Hardening — CAT II + GDPR (Post-Accreditation)",
+      "description": "CAT II findings and GDPR/privacy requirements. Important for production readiness but not accreditation-blocking. Scheduled across Sprints 3 and 7.",
+      "sections": [
+        {
+          "heading": "E17 — Container & Network Hardening (Sprint 3)",
+          "items": [
+            "E17-F1: Non-root containers — adduser + USER directive in all 7 Dockerfiles (V-222548)",
+            "E17-F2: Resource limits + health checks — CPU/mem limits, HEALTHCHECK instructions (V-222549)",
+            "E17-F3: Docker network segmentation — separate unclass-net, restricted-net, diode-net (V-222545)",
+            "E17-F4: ABAC on read queries — protect listBySiteAndStatus, getVisitDetail (V-222425 ext)",
+            "E17-F5: Diode inbox schema validation — Zod/Convex validators per message type (V-222578)",
+            "E17-F6: Register error PII sanitization — never log raw fødselsnummer (V-222602)",
+            "E17-F7: Hardcoded credentials → .env files + K8s Secrets (V-222642)"
+          ]
+        },
+        {
+          "heading": "E18 — GDPR / Privacy Compliance (Sprint 7)",
+          "items": [
+            "E18-F1: Visitor portal privacy notice — GDPR Art. 13/14, bilingual (TM-021)",
+            "E18-F2: Data retention + purge — 24mo pseudonymize, 5yr delete, audit 5yr (TM-022)",
+            "E18-F3: Data Subject Access Request export — structured JSON per visitor (TM-022)",
+            "E18-F4: Cross-classification correlation minimization — one-time tokens (TM-018)"
+          ]
+        },
+        {
+          "heading": "Key Metrics",
+          "items": [
+            "CAT II findings: 38 across containers, 16 across Dockerfiles, 11 network",
+            "LINDDUN threats: 4 privacy-specific findings requiring GDPR remediation",
+            "Total features: 11 (7 CAT II + 4 GDPR)",
+            "Estimated sprints: 2 (Sprint 3 for CAT II, Sprint 7 for GDPR)"
+          ]
+        }
+      ],
+      "justification": [
+        "Container hardening: Running as root in defense containers is unacceptable for production — non-root + read-only FS is baseline",
+        "Network segmentation: Docker default bridge allows cross-classification traffic — must mirror the physical air gap in the dev environment",
+        "GDPR: Sikkerhetsloven + GDPR requires both security AND privacy. Data retention and DSAR are legal obligations, not optional features",
+        "PII sanitization: Register errors currently may log fødselsnummer — violates both GDPR and NSM data minimization guidance"
+      ],
+      "notes": "E17 runs in parallel with E6 (Diode Message Completeness) and E7 (Visitor Type Completeness) in Sprint 3. E18 is scheduled late (Sprint 7) because privacy controls build on top of completed auth (E13) and audit (E1) infrastructure."
+    },
+
+    {
+      "id": "roadmap-updated",
+      "type": "gantt",
+      "title": "Updated Roadmap — 18 Epics, 74 Features",
+      "phases": [
+        { "name": "Sprint 1 ✅", "label": "Audit logging, test harness, ABAC", "startWeek": 1, "endWeek": 2, "color": "storyC" },
+        { "name": "Sprint 1.5", "label": "Security hardening CAT I (9 features)", "startWeek": 2, "endWeek": 3, "color": "accent" },
+        { "name": "Sprint 2", "label": "Escorts, notifications, re-verification", "startWeek": 3, "endWeek": 5, "color": "storyA" },
+        { "name": "Sprint 3", "label": "Diode messages + visitor types + CAT II", "startWeek": 5, "endWeek": 7, "color": "storyB" },
+        { "name": "Sprint 4–5", "label": "Approvals, badges, multi-site, resilience", "startWeek": 7, "endWeek": 11, "color": "secondary" },
+        { "name": "Sprint 6–7", "label": "Missing UIs, auth federation, GDPR, NAR", "startWeek": 11, "endWeek": 15, "color": "muted" }
+      ],
+      "milestones": [
+        { "label": "Audit + ABAC complete ✅", "week": 2 },
+        { "label": "CAT I hardening done", "week": 3 },
+        { "label": "Core workflows complete", "week": 5 },
+        { "label": "Accreditation review ready", "week": 7 },
+        { "label": "Full production readiness", "week": 15 }
+      ],
+      "deliverables": [
+        "Week 2: ✅ Tamper-evident audit log, ABAC authorization, 121 tests passing",
+        "Week 3: JWT auth, NATS TLS, HMAC envelopes, XXE hardened, CVEs fixed",
+        "Week 5: Escort management, notifications, day-of re-verification operational",
+        "Week 7: All diode message types, visitor type routing, CAT II container hardening",
+        "Week 15: All 5+ UIs, Keycloak federation, GDPR compliance, NAR integration"
+      ],
+      "notes": "Updated 2026-03-13. Sprint 1 complete. Sprint 1.5 (CAT I hardening) is the immediate next priority — these 9 features block accreditation. The backlog now tracks 18 epics and 74 features across 7+ sprints."
+    },
+
+    {
+      "id": "stig-compliance-status",
+      "type": "compliance",
+      "title": "STIG Compliance Status — 2026-03-13",
+      "mappings": [
+        { "source": "V-222425 (CAT I)", "requirement": "Enforce approved authorizations for all access", "addressed": "ABAC on 6 mutations ✅ — JWT auth pending (E16-F3), queries pending (E17-F4)" },
+        { "source": "V-222485 (CAT I)", "requirement": "Alert on audit logging failure", "addressed": "Audit chain implemented ✅ — error handling needed (E16-F1, 11 locations)" },
+        { "source": "V-222536 (CAT I)", "requirement": "Data integrity verification", "addressed": "SHA-256 hash chain ✅ — diode HMAC signing pending (E16-F6), badge IDs pending (E16-F9)" },
+        { "source": "V-222543 (CAT I)", "requirement": "Encrypted data transmission", "addressed": "NATS plaintext — TLS + NKey auth planned (E16-F5)" },
+        { "source": "V-222551 (CAT I)", "requirement": "Automated vulnerability scanning", "addressed": "5 CVEs in hono — npm update pending (E16-F2)" },
+        { "source": "V-222577 (CAT I)", "requirement": "Session ID exposure protection", "addressed": "OIDC tokens in localStorage — BFF pattern planned (E16-F8)" },
+        { "source": "V-222602 (CAT I)", "requirement": "XSS / error disclosure prevention", "addressed": "Register PII in logs — sanitization planned (E17-F6)" },
+        { "source": "V-222608 (CAT I)", "requirement": "XML-oriented attack prevention (XXE)", "addressed": "XML parser XXE status unknown — audit + hardening planned (E16-F7)" },
+        { "source": "V-222548 (CAT II)", "requirement": "Container build security", "addressed": "Root users + untagged images — non-root + pinning planned (E17-F1)" },
+        { "source": "V-222549 (CAT II)", "requirement": "Resource limits and health checks", "addressed": "No limits on 9 services — deploy.resources + HEALTHCHECK planned (E17-F2)" },
+        { "source": "V-222606 (CAT I)", "requirement": "Input validation", "addressed": "✅ PASS — Convex typed validators + TypeScript strict mode" },
+        { "source": "V-222607 (CAT I)", "requirement": "SQL injection prevention", "addressed": "✅ PASS — Convex document DB, no SQL surface" }
+      ],
+      "notes": "46 controls tracked. 8 passed, 17 failed, 9 require manual verification, 7 N/A, 5 not yet assessed. CAT I findings are Sprint 1.5 priority. Full tracker at docs/compliance/stig-status.md. Pending: DAST and API fuzzing require running servers."
     },
 
     {
