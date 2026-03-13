@@ -6,6 +6,20 @@ import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
 
+/** Default actor args for an authorized security officer. */
+const officerArgs = {
+  actorId: "sec-001",
+  actorRole: "security_officer",
+  actorSiteId: "SITE-A",
+} as const;
+
+/** Default actor args for an authorized reception guard. */
+const guardArgs = {
+  actorId: "guard-001",
+  actorRole: "reception_guard",
+  actorSiteId: "SITE-A",
+} as const;
+
 /** Seed a visit in the "received" state and return its Id. */
 async function seedVisit(t: ReturnType<typeof convexTest>, correlationId = "corr-001") {
   await t.mutation(internal.visits.receiveFromDiode, {
@@ -38,7 +52,7 @@ describe("transitionVisit — valid transitions", () => {
     const t = convexTest(schema, modules);
     const visitId = await seedVisit(t);
 
-    await t.mutation(api.visits.transitionVisit, { visitId, newStatus: "verifying" });
+    await t.mutation(api.visits.transitionVisit, { visitId, newStatus: "verifying", ...officerArgs });
 
     const visits = await t.query(api.visits.listBySiteAndStatus, {
       siteId: "SITE-A",
@@ -52,7 +66,7 @@ describe("transitionVisit — valid transitions", () => {
     const t = convexTest(schema, modules);
     const visitId = await seedVisit(t);
 
-    await t.mutation(api.visits.transitionVisit, { visitId, newStatus: "cancelled" });
+    await t.mutation(api.visits.transitionVisit, { visitId, newStatus: "cancelled", ...officerArgs });
 
     const visits = await t.query(api.visits.listBySiteAndStatus, {
       siteId: "SITE-A",
@@ -66,9 +80,9 @@ describe("transitionVisit — valid transitions", () => {
     const visitId = await seedVisit(t, "corr-checkin");
 
     for (const s of ["verifying", "verified", "approved", "day_of_check", "ready_for_arrival"]) {
-      await t.mutation(api.visits.transitionVisit, { visitId, newStatus: s });
+      await t.mutation(api.visits.transitionVisit, { visitId, newStatus: s, ...officerArgs });
     }
-    await t.mutation(api.visits.checkInVisitor, { visitId });
+    await t.mutation(api.visits.checkInVisitor, { visitId, ...guardArgs });
 
     const visits = await t.query(api.visits.listBySiteAndStatus, {
       siteId: "SITE-A",
@@ -85,7 +99,7 @@ describe("transitionVisit — invalid transitions throw", () => {
     const visitId = await seedVisit(t);
 
     await expect(
-      t.mutation(api.visits.transitionVisit, { visitId, newStatus: "approved" }),
+      t.mutation(api.visits.transitionVisit, { visitId, newStatus: "approved", ...officerArgs }),
     ).rejects.toThrow("Invalid transition");
   });
 
@@ -94,15 +108,15 @@ describe("transitionVisit — invalid transitions throw", () => {
     const visitId = await seedVisit(t, "corr-terminal");
 
     for (const s of ["verifying", "verified", "approved", "day_of_check", "ready_for_arrival"]) {
-      await t.mutation(api.visits.transitionVisit, { visitId, newStatus: s });
+      await t.mutation(api.visits.transitionVisit, { visitId, newStatus: s, ...officerArgs });
     }
-    await t.mutation(api.visits.checkInVisitor, { visitId });
-    await t.mutation(api.visits.transitionVisit, { visitId, newStatus: "active" });
-    await t.mutation(api.visits.checkOutVisitor, { visitId });
-    await t.mutation(api.visits.transitionVisit, { visitId, newStatus: "completed" });
+    await t.mutation(api.visits.checkInVisitor, { visitId, ...guardArgs });
+    await t.mutation(api.visits.transitionVisit, { visitId, newStatus: "active", ...officerArgs });
+    await t.mutation(api.visits.checkOutVisitor, { visitId, ...guardArgs });
+    await t.mutation(api.visits.transitionVisit, { visitId, newStatus: "completed", ...officerArgs });
 
     await expect(
-      t.mutation(api.visits.transitionVisit, { visitId, newStatus: "verifying" }),
+      t.mutation(api.visits.transitionVisit, { visitId, newStatus: "verifying", ...officerArgs }),
     ).rejects.toThrow("Invalid transition");
   });
 
@@ -111,7 +125,7 @@ describe("transitionVisit — invalid transitions throw", () => {
     const visitId = await seedVisit(t);
 
     await expect(
-      t.mutation(api.visits.checkInVisitor, { visitId }),
+      t.mutation(api.visits.checkInVisitor, { visitId, ...guardArgs }),
     ).rejects.toThrow("Cannot check in");
   });
 
@@ -120,17 +134,17 @@ describe("transitionVisit — invalid transitions throw", () => {
     const visitId = await seedVisit(t);
 
     await expect(
-      t.mutation(api.visits.checkOutVisitor, { visitId }),
+      t.mutation(api.visits.checkOutVisitor, { visitId, ...guardArgs }),
     ).rejects.toThrow("Cannot check out");
   });
 });
 
 describe("audit logging on state transitions", () => {
-  it("transitionVisit emits audit events — VISIT_RECEIVED + VISIT_VERIFYING", async () => {
+  it("transitionVisit emits audit events with real actor ID", async () => {
     const t = convexTest(schema, modules);
     const visitId = await seedVisit(t);
 
-    await t.mutation(api.visits.transitionVisit, { visitId, newStatus: "verifying" });
+    await t.mutation(api.visits.transitionVisit, { visitId, newStatus: "verifying", ...officerArgs });
 
     const entries = await t.run(async (ctx) => {
       return ctx.db
@@ -142,5 +156,123 @@ describe("audit logging on state transitions", () => {
     const types = entries.map((e) => e.eventType);
     expect(types).toContain("VISIT_RECEIVED");
     expect(types).toContain("VISIT_VERIFYING");
+
+    // Verify real actor ID is recorded (not "system")
+    const transitionEntry = entries.find((e) => e.eventType === "VISIT_VERIFYING");
+    expect(transitionEntry!.actorId).toBe("sec-001");
+    expect(transitionEntry!.actorRole).toBe("security_officer");
+  });
+});
+
+describe("visit mutations — ABAC", () => {
+  it("security_officer can transition visits", async () => {
+    const t = convexTest(schema, modules);
+    const visitId = await seedVisit(t);
+
+    await t.mutation(api.visits.transitionVisit, {
+      visitId,
+      newStatus: "verifying",
+      ...officerArgs,
+    });
+
+    const visits = await t.query(api.visits.listBySiteAndStatus, {
+      siteId: "SITE-A",
+      status: "verifying",
+    });
+    expect(visits).toHaveLength(1);
+  });
+
+  it("unit_manager can transition visits", async () => {
+    const t = convexTest(schema, modules);
+    const visitId = await seedVisit(t, "corr-um");
+
+    await t.mutation(api.visits.transitionVisit, {
+      visitId,
+      newStatus: "verifying",
+      actorId: "mgr-001",
+      actorRole: "unit_manager",
+      actorSiteId: "SITE-A",
+    });
+
+    const visits = await t.query(api.visits.listBySiteAndStatus, {
+      siteId: "SITE-A",
+      status: "verifying",
+    });
+    expect(visits).toHaveLength(1);
+  });
+
+  it("sponsor cannot transition visits", async () => {
+    const t = convexTest(schema, modules);
+    const visitId = await seedVisit(t);
+
+    await expect(
+      t.mutation(api.visits.transitionVisit, {
+        visitId,
+        newStatus: "verifying",
+        actorId: "spon-001",
+        actorRole: "sponsor",
+        actorSiteId: "SITE-A",
+      }),
+    ).rejects.toThrow("Unauthorized");
+  });
+
+  it("reception_guard can check in visitors", async () => {
+    const t = convexTest(schema, modules);
+    const visitId = await seedVisit(t, "corr-abac-checkin");
+
+    for (const s of ["verifying", "verified", "approved", "day_of_check", "ready_for_arrival"]) {
+      await t.mutation(api.visits.transitionVisit, {
+        visitId,
+        newStatus: s,
+        ...officerArgs,
+      });
+    }
+
+    await t.mutation(api.visits.checkInVisitor, {
+      visitId,
+      ...guardArgs,
+    });
+
+    const visits = await t.query(api.visits.listBySiteAndStatus, {
+      siteId: "SITE-A",
+      status: "checked_in",
+    });
+    expect(visits).toHaveLength(1);
+  });
+
+  it("sponsor cannot check in visitors", async () => {
+    const t = convexTest(schema, modules);
+    const visitId = await seedVisit(t, "corr-abac-deny");
+
+    await expect(
+      t.mutation(api.visits.checkInVisitor, {
+        visitId,
+        actorId: "spon-001",
+        actorRole: "sponsor",
+        actorSiteId: "SITE-A",
+      }),
+    ).rejects.toThrow("Unauthorized");
+  });
+
+  it("guard at SITE-A cannot check in at SITE-B visit", async () => {
+    const t = convexTest(schema, modules);
+    const visitId = await seedVisit(t, "corr-site-b");
+
+    for (const s of ["verifying", "verified", "approved", "day_of_check", "ready_for_arrival"]) {
+      await t.mutation(api.visits.transitionVisit, {
+        visitId,
+        newStatus: s,
+        ...officerArgs,
+      });
+    }
+
+    await expect(
+      t.mutation(api.visits.checkInVisitor, {
+        visitId,
+        actorId: "guard-001",
+        actorRole: "reception_guard",
+        actorSiteId: "SITE-B",
+      }),
+    ).rejects.toThrow("Unauthorized");
   });
 });
