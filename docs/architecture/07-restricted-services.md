@@ -9,8 +9,7 @@ graph TB
     subgraph RESTRICTED["RESTRICTED Side — Normal User VLAN"]
         GW["Diode Message Gateway<br/>(TypeScript)"]
         CONVEX["Convex Backend<br/>(TypeScript)"]
-        DB[("PostgreSQL<br/>(audit log + OnGuard mock)")]
-        CONVEX_DB[("Convex DB<br/>(reactive application state)")]
+        CONVEX_DB[("Convex DB<br/>(visits, verification, audit log)")]
     end
 
     subgraph UIS["User Interfaces"]
@@ -37,7 +36,6 @@ graph TB
 
     GW --> CONVEX
     CONVEX --> CONVEX_DB
-    CONVEX --> DB
 
     CONVEX -->|"actions"| FREG
     CONVEX -->|"actions"| NKR
@@ -53,7 +51,7 @@ graph TB
     ESCORT_UI --> CONVEX
     MANAGER_UI --> CONVEX
     ADMIN_UI --> CONVEX
-    AUDIT_UI --> DB
+    AUDIT_UI --> CONVEX
 ```
 
 ## 2. Core Services
@@ -181,6 +179,8 @@ Interfaces with OnGuard and physical card infrastructure.
 
 ## 3. User Interfaces & Roles
 
+> **Implementation status**: Guard Station UI (`guard-ui`), Security Officer Dashboard (`security-ui`), Sponsor App (`sponsor`), and Management UI (`management-ui`) are implemented. Escort Mobile Web, Unit Manager Dashboard, Site Administrator Panel, and Auditor Dashboard are designed but not yet implemented (backlog Sprint 5–6).
+
 ### 3.1 Role Matrix
 
 | Role | Guard Station | Sec Officer Dashboard | Escort Mobile | Unit Manager | Site Admin | Auditor |
@@ -300,7 +300,7 @@ The RESTRICTED side must remain functional even when components fail.
 | NKR unavailable | Cannot verify clearance | Block high-security access. Standard visits may proceed at security officer discretion. |
 | SAP HR unavailable | Cannot verify sponsor/employee | Security officer can approve with manual confirmation |
 | OnGuard unavailable | Cannot provision or activate badges | **Critical**: Issue temporary paper passes. Log manually. Backfill in OnGuard when restored. |
-| PostgreSQL unavailable | Cannot process visits | **Critical**: Guard station falls back to offline cache (today's expected visitors). All actions queued for replay. |
+| Convex unavailable | Cannot process visits | **Critical**: Guard station falls back to offline cache (today's expected visitors). All actions queued for replay. |
 | Guard station network | Terminal loses connection to core service | Offline mode: display cached visitor list. Queue check-in/out actions. Sync on reconnect. |
 
 ## 6. SAP HR Integration

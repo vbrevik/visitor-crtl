@@ -5,14 +5,19 @@
   "scripts": {
     "dev": "convex dev",
     "deploy": "convex deploy",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@vms/shared": "*",
     "convex": "^1.17.0"
   },
   "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
     "@types/node": "^22.0.0",
-    "typescript": "^5.7.0"
+    "convex-test": "^0.0.41",
+    "typescript": "^5.7.0",
+    "vitest": "^4.0.18"
   }
 }
