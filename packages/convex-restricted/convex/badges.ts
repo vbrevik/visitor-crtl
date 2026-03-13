@@ -83,6 +83,9 @@ export const issueBadge = action({
       }
 
       // Step 4: Save badge record in Convex
+      if (badgeKey === undefined || visitorId === undefined) {
+        throw new Error("OnGuard response missing badge key or visitor ID");
+      }
       await ctx.runMutation(internal.badgeMutations.saveBadge, {
         visitId: args.visitId,
         onguardBadgeKey: badgeKey,
