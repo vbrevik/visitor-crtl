@@ -4,6 +4,8 @@
 import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { logAudit } from "./auditLog";
+import { parseActor, actorArgs } from "./auth";
+import { isAllowed } from "@vms/shared";
 
 /** Valid state transitions for the visit state machine. */
 const STATE_TRANSITIONS: Record<string, string[]> = {
@@ -75,10 +77,17 @@ export const transitionVisit = mutation({
     visitId: v.id("visits"),
     newStatus: v.string(),
     reason: v.optional(v.string()),
+    ...actorArgs,
   },
   handler: async (ctx, args) => {
+    const actor = parseActor(args);
+
     const visit = await ctx.db.get(args.visitId);
     if (!visit) throw new Error("Visit not found");
+
+    if (!isAllowed(actor, "visit:transition", { siteId: visit.siteId })) {
+      throw new Error("Unauthorized: insufficient permissions for visit:transition");
+    }
 
     const allowed = STATE_TRANSITIONS[visit.status];
     if (!allowed || !allowed.includes(args.newStatus)) {
@@ -91,8 +100,8 @@ export const transitionVisit = mutation({
 
     await logAudit(ctx, {
       eventType: `VISIT_${args.newStatus.toUpperCase()}`,
-      actorId: "system", // TODO: pass real actor from auth context (E13)
-      actorRole: "system",
+      actorId: actor.id,
+      actorRole: actor.role,
       subjectType: "visit",
       subjectId: args.visitId,
       payload: JSON.stringify({
@@ -120,10 +129,17 @@ export const transitionVisit = mutation({
 
 /** Check in a visitor — called by guard station. */
 export const checkInVisitor = mutation({
-  args: { visitId: v.id("visits") },
+  args: { visitId: v.id("visits"), ...actorArgs },
   handler: async (ctx, args) => {
+    const actor = parseActor(args);
+
     const visit = await ctx.db.get(args.visitId);
     if (!visit) throw new Error("Visit not found");
+
+    if (!isAllowed(actor, "visit:check_in", { siteId: visit.siteId })) {
+      throw new Error("Unauthorized: insufficient permissions for visit:check_in");
+    }
+
     if (visit.status !== "ready_for_arrival") {
       throw new Error(`Cannot check in: visit is in status ${visit.status}`);
     }
@@ -135,8 +151,8 @@ export const checkInVisitor = mutation({
 
     await logAudit(ctx, {
       eventType: "VISIT_CHECKED_IN",
-      actorId: "system",
-      actorRole: "guard",
+      actorId: actor.id,
+      actorRole: actor.role,
       subjectType: "visit",
       subjectId: args.visitId,
       payload: JSON.stringify({ checkedInAt: Date.now() }),
@@ -146,10 +162,17 @@ export const checkInVisitor = mutation({
 
 /** Check out a visitor — called by guard station. */
 export const checkOutVisitor = mutation({
-  args: { visitId: v.id("visits") },
+  args: { visitId: v.id("visits"), ...actorArgs },
   handler: async (ctx, args) => {
+    const actor = parseActor(args);
+
     const visit = await ctx.db.get(args.visitId);
     if (!visit) throw new Error("Visit not found");
+
+    if (!isAllowed(actor, "visit:check_out", { siteId: visit.siteId })) {
+      throw new Error("Unauthorized: insufficient permissions for visit:check_out");
+    }
+
     if (visit.status !== "active" && visit.status !== "suspended") {
       throw new Error(`Cannot check out: visit is in status ${visit.status}`);
     }
@@ -161,8 +184,8 @@ export const checkOutVisitor = mutation({
 
     await logAudit(ctx, {
       eventType: "VISIT_CHECKED_OUT",
-      actorId: "system",
-      actorRole: "guard",
+      actorId: actor.id,
+      actorRole: actor.role,
       subjectType: "visit",
       subjectId: args.visitId,
       payload: JSON.stringify({ checkedOutAt: Date.now() }),
