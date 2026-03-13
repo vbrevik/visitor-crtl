@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { describe, it, expect } from "vitest";
+import { api } from "./_generated/api";
 import schema from "./schema";
 import { logAudit } from "./auditLog";
 
@@ -22,6 +23,14 @@ async function writeEntry(
       payload: JSON.stringify({ note: "test" }),
     });
   });
+}
+
+/** Seed multiple distinct audit entries for query/filter tests. */
+async function seedEntries(t: ReturnType<typeof convexTest>) {
+  await writeEntry(t, "VISIT_APPROVED", "visit-1");
+  await writeEntry(t, "VISIT_DENIED", "visit-2");
+  await writeEntry(t, "BADGE_ISSUED", "visit-1");
+  await writeEntry(t, "VISIT_APPROVED", "visit-3");
 }
 
 describe("logAudit — chain integrity", () => {
@@ -109,5 +118,160 @@ describe("logAudit — field content", () => {
     expect(entry.hash).toBeTruthy();
     expect(entry.hash.length).toBe(64);
     expect(/^[0-9a-f]{64}$/.test(entry.hash)).toBe(true);
+  });
+});
+
+describe("verifyChainIntegrity", () => {
+  it("returns intact for a valid 3-entry chain", async () => {
+    const t = convexTest(schema, modules);
+    await writeEntry(t, "VISIT_APPROVED");
+    await writeEntry(t, "BADGE_ISSUED");
+    await writeEntry(t, "VISIT_DENIED");
+
+    const result = await t.query(api.auditLog.verifyChainIntegrity, {});
+
+    expect(result.intact).toBe(true);
+    expect(result.totalChecked).toBe(3);
+  });
+
+  it("returns intact for empty log", async () => {
+    const t = convexTest(schema, modules);
+
+    const result = await t.query(api.auditLog.verifyChainIntegrity, {});
+
+    expect(result.intact).toBe(true);
+    expect(result.totalChecked).toBe(0);
+  });
+
+  it("detects tampered hash field", async () => {
+    const t = convexTest(schema, modules);
+    await writeEntry(t, "VISIT_APPROVED");
+    await writeEntry(t, "BADGE_ISSUED");
+
+    // Tamper with the first entry's hash
+    await t.run(async (ctx) => {
+      const entries = await ctx.db
+        .query("auditLog")
+        .withIndex("by_timestamp")
+        .order("asc")
+        .collect();
+      await ctx.db.patch(entries[0]._id, { hash: "a".repeat(64) });
+    });
+
+    const result = await t.query(api.auditLog.verifyChainIntegrity, {});
+
+    expect(result.intact).toBe(false);
+    expect(result.reason).toBe("hash mismatch");
+    expect(result.totalChecked).toBe(1);
+  });
+
+  it("detects broken prevHash link", async () => {
+    const t = convexTest(schema, modules);
+    await writeEntry(t, "VISIT_APPROVED");
+    await writeEntry(t, "BADGE_ISSUED");
+    await writeEntry(t, "VISIT_DENIED");
+
+    // Tamper with the second entry's prevHash
+    await t.run(async (ctx) => {
+      const entries = await ctx.db
+        .query("auditLog")
+        .withIndex("by_timestamp")
+        .order("asc")
+        .collect();
+      await ctx.db.patch(entries[1]._id, { prevHash: "b".repeat(64) });
+    });
+
+    const result = await t.query(api.auditLog.verifyChainIntegrity, {});
+
+    expect(result.intact).toBe(false);
+    expect(result.reason).toBe("prevHash mismatch");
+    expect(result.totalChecked).toBe(2);
+  });
+
+  it("respects limit parameter", async () => {
+    const t = convexTest(schema, modules);
+    await writeEntry(t, "VISIT_APPROVED");
+    await writeEntry(t, "BADGE_ISSUED");
+    await writeEntry(t, "VISIT_DENIED");
+
+    const result = await t.query(api.auditLog.verifyChainIntegrity, { limit: 2 });
+
+    expect(result.intact).toBe(true);
+    expect(result.totalChecked).toBe(2);
+  });
+});
+
+describe("queryAuditLog — filters", () => {
+  it("filters by eventType", async () => {
+    const t = convexTest(schema, modules);
+    await seedEntries(t);
+
+    const result = await t.query(api.auditLog.queryAuditLog, {
+      eventType: "VISIT_APPROVED",
+      paginationOpts: { numItems: 50, cursor: null },
+    });
+
+    expect(result.page).toHaveLength(2);
+    expect(result.page.every((e) => e.eventType === "VISIT_APPROVED")).toBe(true);
+  });
+
+  it("filters by subjectId", async () => {
+    const t = convexTest(schema, modules);
+    await seedEntries(t);
+
+    const result = await t.query(api.auditLog.queryAuditLog, {
+      subjectId: "visit-1",
+      paginationOpts: { numItems: 50, cursor: null },
+    });
+
+    expect(result.page).toHaveLength(2);
+    expect(result.page.every((e) => e.subjectId === "visit-1")).toBe(true);
+  });
+
+  it("filters by subjectId + eventType combined", async () => {
+    const t = convexTest(schema, modules);
+    await seedEntries(t);
+
+    const result = await t.query(api.auditLog.queryAuditLog, {
+      subjectId: "visit-1",
+      eventType: "BADGE_ISSUED",
+      paginationOpts: { numItems: 50, cursor: null },
+    });
+
+    expect(result.page).toHaveLength(1);
+    expect(result.page[0].eventType).toBe("BADGE_ISSUED");
+    expect(result.page[0].subjectId).toBe("visit-1");
+  });
+
+  it("returns all entries when no filters applied", async () => {
+    const t = convexTest(schema, modules);
+    await seedEntries(t);
+
+    const result = await t.query(api.auditLog.queryAuditLog, {
+      paginationOpts: { numItems: 50, cursor: null },
+    });
+
+    expect(result.page).toHaveLength(4);
+  });
+
+  it("filters by time range", async () => {
+    const t = convexTest(schema, modules);
+    await seedEntries(t);
+
+    // Get timestamps from the entries to build a range around entries 2-3
+    const entries = await t.run(async (ctx) =>
+      ctx.db.query("auditLog").withIndex("by_timestamp").order("asc").collect(),
+    );
+    const from = entries[1].timestamp;
+    const to = entries[2].timestamp;
+
+    const result = await t.query(api.auditLog.queryAuditLog, {
+      from,
+      to,
+      paginationOpts: { numItems: 50, cursor: null },
+    });
+
+    expect(result.page.length).toBeGreaterThanOrEqual(2);
+    expect(result.page.every((e) => e.timestamp >= from && e.timestamp <= to)).toBe(true);
   });
 });
