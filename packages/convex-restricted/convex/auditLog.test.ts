@@ -7,6 +7,13 @@ import { logAudit } from "./auditLog";
 
 const modules = import.meta.glob("./**/*.ts");
 
+/** Default actor args for an authorized security officer. */
+const officerArgs = {
+  actorId: "test-officer",
+  actorRole: "security_officer",
+  actorSiteId: "SITE-A",
+} as const;
+
 /** Write one audit entry directly via logAudit helper. */
 async function writeEntry(
   t: ReturnType<typeof convexTest>,
@@ -128,7 +135,7 @@ describe("verifyChainIntegrity", () => {
     await writeEntry(t, "BADGE_ISSUED");
     await writeEntry(t, "VISIT_DENIED");
 
-    const result = await t.query(api.auditLog.verifyChainIntegrity, {});
+    const result = await t.query(api.auditLog.verifyChainIntegrity, { ...officerArgs });
 
     expect(result.intact).toBe(true);
     expect(result.totalChecked).toBe(3);
@@ -137,7 +144,7 @@ describe("verifyChainIntegrity", () => {
   it("returns intact for empty log", async () => {
     const t = convexTest(schema, modules);
 
-    const result = await t.query(api.auditLog.verifyChainIntegrity, {});
+    const result = await t.query(api.auditLog.verifyChainIntegrity, { ...officerArgs });
 
     expect(result.intact).toBe(true);
     expect(result.totalChecked).toBe(0);
@@ -158,7 +165,7 @@ describe("verifyChainIntegrity", () => {
       await ctx.db.patch(entries[0]._id, { hash: "a".repeat(64) });
     });
 
-    const result = await t.query(api.auditLog.verifyChainIntegrity, {});
+    const result = await t.query(api.auditLog.verifyChainIntegrity, { ...officerArgs });
 
     expect(result.intact).toBe(false);
     expect(result.reason).toBe("hash mismatch");
@@ -181,7 +188,7 @@ describe("verifyChainIntegrity", () => {
       await ctx.db.patch(entries[1]._id, { prevHash: "b".repeat(64) });
     });
 
-    const result = await t.query(api.auditLog.verifyChainIntegrity, {});
+    const result = await t.query(api.auditLog.verifyChainIntegrity, { ...officerArgs });
 
     expect(result.intact).toBe(false);
     expect(result.reason).toBe("prevHash mismatch");
@@ -194,7 +201,7 @@ describe("verifyChainIntegrity", () => {
     await writeEntry(t, "BADGE_ISSUED");
     await writeEntry(t, "VISIT_DENIED");
 
-    const result = await t.query(api.auditLog.verifyChainIntegrity, { limit: 2 });
+    const result = await t.query(api.auditLog.verifyChainIntegrity, { ...officerArgs, limit: 2 });
 
     expect(result.intact).toBe(true);
     expect(result.totalChecked).toBe(2);
@@ -207,6 +214,7 @@ describe("queryAuditLog — filters", () => {
     await seedEntries(t);
 
     const result = await t.query(api.auditLog.queryAuditLog, {
+      ...officerArgs,
       eventType: "VISIT_APPROVED",
       paginationOpts: { numItems: 50, cursor: null },
     });
@@ -220,6 +228,7 @@ describe("queryAuditLog — filters", () => {
     await seedEntries(t);
 
     const result = await t.query(api.auditLog.queryAuditLog, {
+      ...officerArgs,
       subjectId: "visit-1",
       paginationOpts: { numItems: 50, cursor: null },
     });
@@ -233,6 +242,7 @@ describe("queryAuditLog — filters", () => {
     await seedEntries(t);
 
     const result = await t.query(api.auditLog.queryAuditLog, {
+      ...officerArgs,
       subjectId: "visit-1",
       eventType: "BADGE_ISSUED",
       paginationOpts: { numItems: 50, cursor: null },
@@ -248,6 +258,7 @@ describe("queryAuditLog — filters", () => {
     await seedEntries(t);
 
     const result = await t.query(api.auditLog.queryAuditLog, {
+      ...officerArgs,
       paginationOpts: { numItems: 50, cursor: null },
     });
 
@@ -266,6 +277,7 @@ describe("queryAuditLog — filters", () => {
     const to = entries[2].timestamp;
 
     const result = await t.query(api.auditLog.queryAuditLog, {
+      ...officerArgs,
       from,
       to,
       paginationOpts: { numItems: 50, cursor: null },
@@ -273,5 +285,75 @@ describe("queryAuditLog — filters", () => {
 
     expect(result.page.length).toBeGreaterThanOrEqual(2);
     expect(result.page.every((e) => e.timestamp >= from && e.timestamp <= to)).toBe(true);
+  });
+});
+
+describe("queryAuditLog — ABAC", () => {
+  it("security_officer can query audit log", async () => {
+    const t = convexTest(schema, modules);
+    await writeEntry(t, "VISIT_APPROVED");
+
+    const result = await t.query(api.auditLog.queryAuditLog, {
+      actorId: "emp-001",
+      actorRole: "security_officer",
+      actorSiteId: "SITE-A",
+      paginationOpts: { numItems: 50, cursor: null },
+    });
+
+    expect(result.page).toHaveLength(1);
+  });
+
+  it("auditor can query audit log", async () => {
+    const t = convexTest(schema, modules);
+    await writeEntry(t, "VISIT_APPROVED");
+
+    const result = await t.query(api.auditLog.queryAuditLog, {
+      actorId: "aud-001",
+      actorRole: "auditor",
+      actorSiteId: "SITE-A",
+      paginationOpts: { numItems: 50, cursor: null },
+    });
+
+    expect(result.page).toHaveLength(1);
+  });
+
+  it("reception_guard cannot query audit log", async () => {
+    const t = convexTest(schema, modules);
+    await writeEntry(t, "VISIT_APPROVED");
+
+    await expect(
+      t.query(api.auditLog.queryAuditLog, {
+        actorId: "guard-001",
+        actorRole: "reception_guard",
+        actorSiteId: "SITE-A",
+        paginationOpts: { numItems: 50, cursor: null },
+      }),
+    ).rejects.toThrow("Unauthorized");
+  });
+});
+
+describe("verifyChainIntegrity — ABAC", () => {
+  it("auditor can verify chain", async () => {
+    const t = convexTest(schema, modules);
+
+    const result = await t.query(api.auditLog.verifyChainIntegrity, {
+      actorId: "aud-001",
+      actorRole: "auditor",
+      actorSiteId: "SITE-A",
+    });
+
+    expect(result.intact).toBe(true);
+  });
+
+  it("sponsor cannot verify chain", async () => {
+    const t = convexTest(schema, modules);
+
+    await expect(
+      t.query(api.auditLog.verifyChainIntegrity, {
+        actorId: "spon-001",
+        actorRole: "sponsor",
+        actorSiteId: "SITE-A",
+      }),
+    ).rejects.toThrow("Unauthorized");
   });
 });

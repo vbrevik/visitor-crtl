@@ -13,13 +13,13 @@
  * audit writes. If two mutations try to write audit entries concurrently,
  * one will retry automatically, preserving chain integrity.
  *
- * TODO: Add ABAC authorization to queryAuditLog and verifyChainIntegrity
- * when access control (E13) is implemented. Currently unrestricted.
  */
 import { internalMutation, query } from "./_generated/server";
 import type { GenericMutationCtx } from "convex/server";
 import type { DataModel } from "./_generated/dataModel";
 import { v } from "convex/values";
+import { parseActor, actorArgs } from "./auth";
+import { isAllowed } from "@vms/shared";
 
 /** Convert an ArrayBuffer to a hex string. */
 function bufferToHex(buffer: ArrayBuffer): string {
@@ -128,6 +128,7 @@ export const logAuditEvent = internalMutation({
  */
 export const queryAuditLog = query({
   args: {
+    ...actorArgs,
     eventType: v.optional(v.string()),
     subjectId: v.optional(v.string()),
     from: v.optional(v.number()),
@@ -138,6 +139,11 @@ export const queryAuditLog = query({
     }),
   },
   handler: async (ctx, args) => {
+    const actor = parseActor(args);
+    if (!isAllowed(actor, "audit:query", { siteId: actor.siteId })) {
+      throw new Error("Unauthorized: insufficient permissions for audit:query");
+    }
+
     // Use the most selective index available
     let baseQuery;
     if (args.subjectId) {
@@ -181,9 +187,15 @@ export const queryAuditLog = query({
  */
 export const verifyChainIntegrity = query({
   args: {
+    ...actorArgs,
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const actor = parseActor(args);
+    if (!isAllowed(actor, "audit:verify_chain", { siteId: actor.siteId })) {
+      throw new Error("Unauthorized: insufficient permissions for audit:verify_chain");
+    }
+
     const limit = Math.min(args.limit ?? 200, 200);
 
     const entries = await ctx.db
